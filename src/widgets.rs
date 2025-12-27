@@ -542,8 +542,25 @@ impl WidgetNode for ButtonWidget {
             }
         });
 
-        ui.label("On Click Code:");
-        ui.code_editor(&mut self.clicked_code);
+        ui.separator();
+        ui.heading("On Click Action");
+        ui.label("Write Rust code to execute when button is clicked:");
+        ui.label("Example: self.counter += 1;");
+
+        let code_editor = egui::TextEdit::multiline(&mut self.clicked_code)
+            .code_editor()
+            .desired_rows(5)
+            .desired_width(f32::INFINITY);
+        ui.add(code_editor);
+
+        if !self.clicked_code.trim().is_empty() {
+            // Show validation feedback
+            if self.clicked_code.parse::<proc_macro2::TokenStream>().is_ok() {
+                ui.colored_label(egui::Color32::GREEN, "✓ Valid Rust syntax");
+            } else {
+                ui.colored_label(egui::Color32::RED, "✗ Invalid Rust syntax");
+            }
+        }
     }
 
     // Generating the AST for the final Rust application.
@@ -557,9 +574,23 @@ impl WidgetNode for ButtonWidget {
             quote! { #text }
         };
 
+        // Parse and inject clicked_code if present
+        let action_code = if !self.clicked_code.trim().is_empty() {
+            // Parse the code string as Rust tokens
+            match self.clicked_code.parse::<proc_macro2::TokenStream>() {
+                Ok(tokens) => tokens,
+                Err(_) => {
+                    // If parsing fails, insert a comment indicating the error
+                    quote! { /* Invalid Rust code in clicked_code */ }
+                }
+            }
+        } else {
+            quote! { /* No action code */ }
+        };
+
         quote! {
             if ui.button(#label_tokens).clicked() {
-                // Logic would be injected here
+                #action_code
             }
         }
     }
