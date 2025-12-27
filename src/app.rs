@@ -28,6 +28,12 @@ pub struct AetherApp {
 
     // Theme initialized flag
     theme_initialized: bool,
+
+    // Canvas zoom level (1.0 = 100%)
+    canvas_zoom: f32,
+
+    // Canvas pan offset
+    canvas_pan: egui::Vec2,
 }
 
 impl AetherApp {
@@ -56,6 +62,8 @@ impl AetherApp {
             validation_status: ValidationStatus::NotRun,
             theme_mode: ThemeMode::Dark,
             theme_initialized: false,
+            canvas_zoom: 1.0,
+            canvas_pan: egui::Vec2::ZERO,
         }
     }
 
@@ -276,6 +284,8 @@ impl App for AetherApp {
             project_state: &mut self.project_state,
             validation_status: &mut self.validation_status,
             theme_mode: &mut self.theme_mode,
+            canvas_zoom: &mut self.canvas_zoom,
+            canvas_pan: &mut self.canvas_pan,
         };
 
         // Render the docking area

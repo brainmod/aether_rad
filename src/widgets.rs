@@ -70,6 +70,28 @@ fn check_resize_handle(_ui: &egui::Ui, rect: egui::Rect, mouse_pos: egui::Pos2) 
     None
 }
 
+/// Handle multi-selection: Ctrl/Cmd toggles, normal click clears and selects
+fn handle_selection(ui: &egui::Ui, widget_id: Uuid, response_clicked: bool, selection: &mut HashSet<Uuid>) {
+    if !response_clicked {
+        return;
+    }
+
+    ui.input(|i| {
+        if i.modifiers.command {
+            // Ctrl/Cmd + click: toggle selection
+            if selection.contains(&widget_id) {
+                selection.remove(&widget_id);
+            } else {
+                selection.insert(widget_id);
+            }
+        } else {
+            // Normal click: clear and select only this widget
+            selection.clear();
+            selection.insert(widget_id);
+        }
+    });
+}
+
 /// Render an action editor in the Inspector
 fn render_action_editor(ui: &mut egui::Ui, action: &mut crate::model::Action, known_variables: &[String]) {
     use crate::model::Action;
@@ -271,6 +293,7 @@ impl WidgetNode for VerticalLayout {
                     "Separator" => Box::new(SeparatorWidget::default()),
                     "Spinner" => Box::new(SpinnerWidget::default()),
                     "Hyperlink" => Box::new(HyperlinkWidget::default()),
+                    "Color Picker" => Box::new(ColorPickerWidget::default()),
                     _ => return,
                 };
                 self.children.push(new_widget);
@@ -380,6 +403,7 @@ impl WidgetNode for HorizontalLayout {
                             "Separator" => Box::new(SeparatorWidget::default()),
                             "Spinner" => Box::new(SpinnerWidget::default()),
                             "Hyperlink" => Box::new(HyperlinkWidget::default()),
+                            "Color Picker" => Box::new(ColorPickerWidget::default()),
                             _ => return,
                         };
                         self.children.push(new_widget);
@@ -505,6 +529,7 @@ impl WidgetNode for GridLayout {
                             "Separator" => Box::new(SeparatorWidget::default()),
                             "Spinner" => Box::new(SpinnerWidget::default()),
                             "Hyperlink" => Box::new(HyperlinkWidget::default()),
+                            "Color Picker" => Box::new(ColorPickerWidget::default()),
                             _ => return,
                         };
                         self.children.push(new_widget);
@@ -617,10 +642,8 @@ impl WidgetNode for ButtonWidget {
         // [cite: 107]
         let response = ui.button(&self.text);
 
-        if response.clicked() {
-            selection.clear();
-            selection.insert(self.id);
-        }
+        // Handle multi-selection with Ctrl/Cmd support
+        handle_selection(ui, self.id, response.clicked(), selection);
 
         if selection.contains(&self.id) {
             draw_gizmo(ui, response.rect);
@@ -781,10 +804,9 @@ impl WidgetNode for LabelWidget {
         let response = ui.label(&self.text);
         let response = response.interact(egui::Sense::click()); // Labels aren't clickable by default
 
-        if response.clicked() {
-            selection.clear();
-            selection.insert(self.id);
-        }
+        // Handle multi-selection with Ctrl/Cmd support
+        handle_selection(ui, self.id, response.clicked(), selection);
+
         if selection.contains(&self.id) {
             draw_gizmo(ui, response.rect);
         }
@@ -1015,10 +1037,8 @@ impl WidgetNode for CheckboxWidget {
 
     fn render_editor(&mut self, ui: &mut Ui, selection: &mut HashSet<Uuid>) {
         let response = ui.checkbox(&mut self.checked, &self.label);
-        if response.clicked() {
-            selection.clear();
-            selection.insert(self.id);
-        }
+        // Handle multi-selection with Ctrl/Cmd support
+        handle_selection(ui, self.id, response.clicked(), selection);
         if selection.contains(&self.id) {
             draw_gizmo(ui, response.rect);
         }
@@ -1306,10 +1326,8 @@ impl WidgetNode for ProgressBarWidget {
         let response = ui.add(egui::ProgressBar::new(self.value).show_percentage());
         let response = response.interact(egui::Sense::click());
 
-        if response.clicked() {
-            selection.clear();
-            selection.insert(self.id);
-        }
+        // Handle multi-selection with Ctrl/Cmd support
+        handle_selection(ui, self.id, response.clicked(), selection);
         if selection.contains(&self.id) {
             draw_gizmo(ui, response.rect);
         }
@@ -1578,10 +1596,8 @@ impl WidgetNode for ImageWidget {
 
         let response = response.interact(egui::Sense::click());
 
-        if response.clicked() {
-            selection.clear();
-            selection.insert(self.id);
-        }
+        // Handle multi-selection with Ctrl/Cmd support
+        handle_selection(ui, self.id, response.clicked(), selection);
 
         let is_selected = selection.contains(&self.id);
         if is_selected {
@@ -1747,10 +1763,8 @@ impl WidgetNode for SeparatorWidget {
         let response = ui.separator();
         let response = response.interact(egui::Sense::click());
 
-        if response.clicked() {
-            selection.clear();
-            selection.insert(self.id);
-        }
+        // Handle multi-selection with Ctrl/Cmd support
+        handle_selection(ui, self.id, response.clicked(), selection);
 
         if selection.contains(&self.id) {
             draw_gizmo(ui, response.rect);
@@ -1805,10 +1819,8 @@ impl WidgetNode for SpinnerWidget {
         let response = ui.add(egui::Spinner::new().size(self.size));
         let response = response.interact(egui::Sense::click());
 
-        if response.clicked() {
-            selection.clear();
-            selection.insert(self.id);
-        }
+        // Handle multi-selection with Ctrl/Cmd support
+        handle_selection(ui, self.id, response.clicked(), selection);
 
         if selection.contains(&self.id) {
             draw_gizmo(ui, response.rect);
@@ -1868,10 +1880,8 @@ impl WidgetNode for HyperlinkWidget {
     fn render_editor(&mut self, ui: &mut Ui, selection: &mut HashSet<Uuid>) {
         let response = ui.hyperlink_to(&self.text, &self.url);
 
-        if response.clicked() {
-            selection.clear();
-            selection.insert(self.id);
-        }
+        // Handle multi-selection with Ctrl/Cmd support
+        handle_selection(ui, self.id, response.clicked(), selection);
 
         if selection.contains(&self.id) {
             draw_gizmo(ui, response.rect);
@@ -1897,5 +1907,134 @@ impl WidgetNode for HyperlinkWidget {
         let text = &self.text;
         let url = &self.url;
         quote! { ui.hyperlink_to(#text, #url); }
+    }
+}
+
+// --- ColorPicker ---
+/// A color selection widget
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ColorPickerWidget {
+    pub id: Uuid,
+    pub color: [f32; 4],
+    #[serde(default)]
+    pub bindings: std::collections::HashMap<String, String>,
+}
+
+impl Default for ColorPickerWidget {
+    fn default() -> Self {
+        Self {
+            id: Uuid::new_v4(),
+            color: [1.0, 1.0, 1.0, 1.0], // White by default
+            bindings: std::collections::HashMap::new(),
+        }
+    }
+}
+
+#[typetag::serde]
+impl WidgetNode for ColorPickerWidget {
+    fn clone_box(&self) -> Box<dyn WidgetNode> {
+        Box::new(self.clone())
+    }
+
+    fn id(&self) -> Uuid {
+        self.id
+    }
+
+    fn name(&self) -> &str {
+        "Color Picker"
+    }
+
+    fn render_editor(&mut self, ui: &mut Ui, selection: &mut HashSet<Uuid>) {
+        let response = ui.color_edit_button_rgba_unmultiplied(&mut self.color);
+
+        // Handle multi-selection with Ctrl/Cmd support
+        handle_selection(ui, self.id, response.clicked(), selection);
+
+        if selection.contains(&self.id) {
+            draw_gizmo(ui, response.rect);
+        }
+
+        let hex = format!(
+            "#{:02x}{:02x}{:02x}{:02x}",
+            (self.color[0] * 255.0) as u8,
+            (self.color[1] * 255.0) as u8,
+            (self.color[2] * 255.0) as u8,
+            (self.color[3] * 255.0) as u8,
+        );
+        response.on_hover_text(format!("Color: {}\nID: {}", hex, self.id));
+    }
+
+    fn inspect(&mut self, ui: &mut Ui, known_variables: &[String]) {
+        ui.heading("Color Picker Properties");
+        ui.label(format!("ID: {}", self.id));
+
+        ui.separator();
+
+        ui.horizontal(|ui| {
+            ui.label("Color:");
+            let is_bound = self.bindings.contains_key("color");
+            let mut bound_mode = is_bound;
+
+            if ui.checkbox(&mut bound_mode, "Bind").changed() {
+                if bound_mode {
+                    if !known_variables.is_empty() {
+                        self.bindings
+                            .insert("color".to_string(), known_variables[0].clone());
+                    } else {
+                        self.bindings.insert("color".to_string(), "".to_string());
+                    }
+                } else {
+                    self.bindings.remove("color");
+                }
+            }
+
+            if bound_mode {
+                let current_var = self.bindings.get("color").cloned().unwrap_or_default();
+                let mut selected_var = current_var.clone();
+
+                egui::ComboBox::from_id_salt("color_picker_bind")
+                    .selected_text(&selected_var)
+                    .show_ui(ui, |ui| {
+                        for var in known_variables {
+                            ui.selectable_value(&mut selected_var, var.clone(), var);
+                        }
+                    });
+
+                if selected_var != current_var {
+                    self.bindings.insert("color".to_string(), selected_var);
+                }
+            } else {
+                ui.color_edit_button_rgba_unmultiplied(&mut self.color);
+            }
+        });
+
+        // Display hex color for reference
+        let hex = format!(
+            "#{:02x}{:02x}{:02x}{:02x}",
+            (self.color[0] * 255.0) as u8,
+            (self.color[1] * 255.0) as u8,
+            (self.color[2] * 255.0) as u8,
+            (self.color[3] * 255.0) as u8,
+        );
+        ui.label(format!("Hex: {}", hex));
+    }
+
+    fn codegen(&self) -> proc_macro2::TokenStream {
+        let r = (self.color[0] * 255.0) as u8;
+        let g = (self.color[1] * 255.0) as u8;
+        let b = (self.color[2] * 255.0) as u8;
+        let a = (self.color[3] * 255.0) as u8;
+
+        if let Some(var_name) = self.bindings.get("color") {
+            let ident = quote::format_ident!("{}", var_name);
+            quote! {
+                ui.color_edit_button_rgba_unmultiplied(&mut self.#ident);
+            }
+        } else {
+            quote! {
+                let mut color = [#r as f32 / 255.0, #g as f32 / 255.0, #b as f32 / 255.0, #a as f32 / 255.0];
+                ui.color_edit_button_rgba_unmultiplied(&mut color);
+            }
+        }
     }
 }

@@ -25,6 +25,8 @@ pub struct AetherTabViewer<'a> {
     pub project_state: &'a mut ProjectState,
     pub validation_status: &'a mut ValidationStatus,
     pub theme_mode: &'a mut ThemeMode,
+    pub canvas_zoom: &'a mut f32,
+    pub canvas_pan: &'a mut egui::Vec2,
 }
 
 impl<'a> TabViewer for AetherTabViewer<'a> {
@@ -75,13 +77,37 @@ impl<'a> AetherTabViewer<'a> {
             .fill(outer_bg)
             .inner_margin(egui::Margin::same(16))
             .show(ui, |ui| {
-                // Canvas header
+                // Canvas header with zoom controls
                 ui.horizontal(|ui| {
                     ui.label(
                         RichText::new("■ Design Canvas")
                             .size(12.0)
                             .color(muted_color),
                     );
+
+                    ui.separator();
+
+                    // Zoom controls
+                    if ui.button("−").clicked() {
+                        *self.canvas_zoom = (*self.canvas_zoom - 0.1).max(0.1);
+                    }
+                    ui.add(
+                        egui::Slider::new(self.canvas_zoom, 0.1..=3.0)
+                            .fixed_decimals(0)
+                            .text("%")
+                            .show_value(true),
+                    );
+                    if ui.button("+").clicked() {
+                        *self.canvas_zoom = (*self.canvas_zoom + 0.1).min(3.0);
+                    }
+                    if ui.button("100%").clicked() {
+                        *self.canvas_zoom = 1.0;
+                    }
+                    if ui.button("Fit").clicked() {
+                        *self.canvas_zoom = 1.0;
+                        *self.canvas_pan = egui::Vec2::ZERO;
+                    }
+
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         ui.label(
                             RichText::new(format!(
@@ -95,7 +121,7 @@ impl<'a> AetherTabViewer<'a> {
                 });
                 ui.add_space(8.0);
 
-                // Canvas content area
+                // Canvas content area with scroll and zoom
                 let canvas_bg = if is_light {
                     Color32::from_rgb(240, 240, 245)
                 } else {
@@ -113,9 +139,18 @@ impl<'a> AetherTabViewer<'a> {
                     .corner_radius(CornerRadius::same(8))
                     .stroke(egui::Stroke::new(1.0, canvas_stroke))
                     .show(ui, |ui| {
-                        self.project_state
-                            .root_node
-                            .render_editor(ui, &mut self.project_state.selection);
+                        // Scroll area for panning
+                        egui::ScrollArea::both()
+                            .auto_shrink([false; 2])
+                            .show(ui, |ui| {
+                                // Zoom scales the canvas by adjusting spacing
+                                let zoom = *self.canvas_zoom;
+                                ui.add_space((zoom - 1.0) * 10.0);
+
+                                self.project_state
+                                    .root_node
+                                    .render_editor(ui, &mut self.project_state.selection);
+                            });
                     });
             });
     }
@@ -163,6 +198,7 @@ impl<'a> AetherTabViewer<'a> {
                     "Separator",
                     "Spinner",
                     "Hyperlink",
+                    "Color Picker",
                 ],
                 AetherColors::DISPLAY_COLOR,
             );
@@ -235,7 +271,38 @@ impl<'a> AetherTabViewer<'a> {
     fn render_inspector(&mut self, ui: &mut Ui) {
         ui.add_space(4.0);
 
-        if let Some(id) = self.project_state.selection.iter().next().cloned() {
+        // Check if multiple widgets are selected
+        let selection_count = self.project_state.selection.len();
+
+        if selection_count == 0 {
+            ui.label(theme::heading("Inspector"));
+            ui.add_space(8.0);
+            ui.label(RichText::new("No widget selected").color(theme::muted_color(ui.ctx())));
+        } else if selection_count > 1 {
+            // Multi-selection mode
+            ui.label(theme::heading(&format!("{} Widgets Selected", selection_count)));
+            ui.add_space(8.0);
+            ui.label(
+                RichText::new("Multi-selection: Edit properties for all selected widgets")
+                    .color(theme::muted_color(ui.ctx()))
+                    .size(11.0),
+            );
+            ui.add_space(8.0);
+
+            // Show common actions for all selected widgets
+            theme::section_frame(ui.ctx()).show(ui, |ui| {
+                ui.label(theme::subheading("Bulk Actions"));
+                ui.add_space(6.0);
+
+                ui.horizontal(|ui| {
+                    if ui.button("Delete All").clicked() {
+                        for id in self.project_state.selection.clone() {
+                            self.project_state.delete_widget(id);
+                        }
+                    }
+                });
+            });
+        } else if let Some(id) = self.project_state.selection.iter().next().cloned() {
             let known_vars: Vec<String> = self.project_state.variables.keys().cloned().collect();
             let is_root = id == self.project_state.root_node.id();
 
@@ -780,10 +847,28 @@ fn draw_hierarchy_node_styled(
                 }
             });
 
-            if response.header_response.clicked() {
-                selection.clear();
-                selection.insert(id);
-            }
+            // Make the header draggable
+            let _drag_response = ui.dnd_drag_source(egui::Id::new(id), id.to_string(), |ui| {
+                ui.label("");
+            });
+
+            // Handle multi-selection with Ctrl/Cmd support
+            ui.input(|i| {
+                if response.header_response.clicked() {
+                    if i.modifiers.command {
+                        // Ctrl/Cmd + click: toggle selection
+                        if selection.contains(&id) {
+                            selection.remove(&id);
+                        } else {
+                            selection.insert(id);
+                        }
+                    } else {
+                        // Normal click: clear and select only this widget
+                        selection.clear();
+                        selection.insert(id);
+                    }
+                }
+            });
 
             // Selection indicator
             if is_selected {
@@ -810,10 +895,28 @@ fn draw_hierarchy_node_styled(
             let response =
                 ui.selectable_label(is_selected, RichText::new(display_text).color(text_color));
 
-            if response.clicked() {
-                selection.clear();
-                selection.insert(id);
-            }
+            // Make the label draggable
+            let _drag_response = ui.dnd_drag_source(egui::Id::new(id), id.to_string(), |ui| {
+                ui.label("");
+            });
+
+            // Handle multi-selection with Ctrl/Cmd support
+            ui.input(|i| {
+                if response.clicked() {
+                    if i.modifiers.command {
+                        // Ctrl/Cmd + click: toggle selection
+                        if selection.contains(&id) {
+                            selection.remove(&id);
+                        } else {
+                            selection.insert(id);
+                        }
+                    } else {
+                        // Normal click: clear and select only this widget
+                        selection.clear();
+                        selection.insert(id);
+                    }
+                }
+            });
         });
     }
 }
