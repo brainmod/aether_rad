@@ -174,8 +174,24 @@ impl<'a> AetherTabViewer<'a> {
 
                 ui.separator();
 
-                // Add Delete button (not for root)
+                // Add Reorder and Delete buttons (not for root)
                 if !is_root {
+                    ui.heading("Widget Actions");
+
+                    // Reorder buttons
+                    ui.horizontal(|ui| {
+                        ui.label("Reorder:");
+                        if ui.button("⬆ Move Up").clicked() {
+                            self.project_state.move_widget_up(id);
+                        }
+                        if ui.button("⬇ Move Down").clicked() {
+                            self.project_state.move_widget_down(id);
+                        }
+                    });
+
+                    ui.separator();
+
+                    // Delete button
                     ui.horizontal(|ui| {
                         if ui.button("🗑 Delete Widget").clicked() {
                             if self.project_state.delete_widget(id) {

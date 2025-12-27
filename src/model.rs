@@ -154,6 +154,16 @@ impl ProjectState {
         reorder_widget_recursive(self.root_node.as_mut(), widget_id, new_index)
     }
 
+    /// Move a widget up in its parent's children list (towards index 0)
+    pub fn move_widget_up(&mut self, widget_id: Uuid) -> bool {
+        move_widget_in_parent(self.root_node.as_mut(), widget_id, -1)
+    }
+
+    /// Move a widget down in its parent's children list (towards end)
+    pub fn move_widget_down(&mut self, widget_id: Uuid) -> bool {
+        move_widget_in_parent(self.root_node.as_mut(), widget_id, 1)
+    }
+
     /// Get all widget IDs in hierarchy order (depth-first traversal)
     pub fn get_all_widget_ids(&self) -> Vec<Uuid> {
         let mut ids = Vec::new();
@@ -284,6 +294,33 @@ fn reorder_widget_recursive(node: &mut dyn WidgetNode, widget_id: Uuid, new_inde
         // Recurse into each child
         for child in children.iter_mut() {
             if reorder_widget_recursive(child.as_mut(), widget_id, new_index) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+/// Move a widget up or down within its parent's children list
+/// delta: -1 for up (towards index 0), +1 for down (towards end)
+fn move_widget_in_parent(node: &mut dyn WidgetNode, widget_id: Uuid, delta: i32) -> bool {
+    if let Some(children) = node.children_mut() {
+        // Check if the widget is a direct child
+        if let Some(current_index) = children.iter().position(|c| c.id() == widget_id) {
+            let new_index = current_index as i32 + delta;
+
+            // Check bounds
+            if new_index >= 0 && new_index < children.len() as i32 {
+                let widget = children.remove(current_index);
+                children.insert(new_index as usize, widget);
+                return true;
+            }
+            return false; // Can't move further in that direction
+        }
+
+        // Recurse into each child
+        for child in children.iter_mut() {
+            if move_widget_in_parent(child.as_mut(), widget_id, delta) {
                 return true;
             }
         }
