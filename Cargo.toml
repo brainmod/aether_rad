@@ -19,6 +19,8 @@ uuid = { version = "1.19.0", features = ["v4", "serde"] }
 # Code Generation [cite: 181]
 quote = "1.0"
 proc-macro2 = "1.0"
+syn = { version = "2", features = ["full", "parsing"] }
+prettyplease = "0.2"
 
 # Docking (Prepared for Phase 2) [cite: 75]
 egui_dock = "0.18.0"

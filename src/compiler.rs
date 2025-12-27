@@ -20,7 +20,7 @@ eframe = "0.33.3"
     }
 
     pub fn generate_main_rs() -> String {
-        r#"#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // hide console window on Windows in release
+        let code = r#"#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod app;
 use app::MyApp;
@@ -35,13 +35,14 @@ fn main() -> eframe::Result {
         "Generated App",
         options,
         Box::new(|cc| {
-             egui_extras::install_image_loaders(&cc.egui_ctx);
-             Ok(Box::new(MyApp::default()))
+            egui_extras::install_image_loaders(&cc.egui_ctx);
+            Ok(Box::new(MyApp::default()))
         }),
     )
 }
-"#
-        .to_string()
+"#;
+        // Format main.rs with prettyplease
+        Self::format_rust_code(code)
     }
 
     pub fn generate_app_rs(state: &ProjectState) -> String {
@@ -56,7 +57,7 @@ fn main() -> eframe::Result {
         for key in keys {
             if let Some(var) = state.variables.get(&key) {
                 let name = quote::format_ident!("{}", var.name);
-                let val_str = &var.value; // Extract string reference
+                let val_str = &var.value;
                 let (ty, init_val) = match var.v_type {
                     VariableType::String => (quote! { String }, quote! { String::from(#val_str) }),
                     VariableType::Integer => (quote! { i32 }, {
@@ -87,7 +88,6 @@ fn main() -> eframe::Result {
         }
 
         // 2. Generate UI Code
-        // This relies on WidgetNode::codegen() being updated to handle "self." prefixing
         let ui_body = state.root_node.codegen();
 
         let app_code = quote! {
@@ -115,7 +115,20 @@ fn main() -> eframe::Result {
             }
         };
 
-        // Standard pretty-printing (basic)
-        app_code.to_string()
+        // Format with prettyplease
+        Self::format_rust_code(&app_code.to_string())
+    }
+
+    /// Format Rust code using prettyplease for readable output
+    fn format_rust_code(code: &str) -> String {
+        // Try to parse and format with prettyplease
+        match syn::parse_file(code) {
+            Ok(syntax_tree) => prettyplease::unparse(&syntax_tree),
+            Err(_) => {
+                // If parsing fails, return the original code
+                // This can happen with incomplete or invalid code
+                code.to_string()
+            }
+        }
     }
 }
