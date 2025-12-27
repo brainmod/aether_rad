@@ -75,6 +75,7 @@ impl WidgetNode for VerticalLayout {
                     "Checkbox" => Box::new(CheckboxWidget::default()),
                     "Slider" => Box::new(SliderWidget::default()),
                     "Vertical Layout" => Box::new(VerticalLayout::default()),
+                    "Horizontal Layout" => Box::new(HorizontalLayout::default()),
                     _ => return,
                 };
                 self.children.push(new_widget);
@@ -91,6 +92,8 @@ impl WidgetNode for VerticalLayout {
 
         ui.label(format!("Children count: {}", self.children.len()));
     }
+
+    // ... VerticalLayout ...
 
     // RECURSION: Generate code for the layout and all children
     fn codegen(&self) -> proc_macro2::TokenStream {
@@ -115,9 +118,105 @@ impl WidgetNode for VerticalLayout {
     }
 }
 
+/// A container that arranges children horizontally.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct HorizontalLayout {
+    pub id: Uuid,
+    pub children: Vec<Box<dyn WidgetNode>>,
+    pub spacing: f32,
+}
+
+impl Default for HorizontalLayout {
+    fn default() -> Self {
+        Self {
+            id: Uuid::new_v4(),
+            children: Vec::new(),
+            spacing: 5.0,
+        }
+    }
+}
+
+#[typetag::serde]
+impl WidgetNode for HorizontalLayout {
+    fn id(&self) -> Uuid {
+        self.id
+    }
+    fn name(&self) -> &str {
+        "Horizontal Layout"
+    }
+
+    fn render_editor(&mut self, ui: &mut Ui, selection: &mut HashSet<Uuid>) {
+        let response = ui
+            .horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = self.spacing;
+                for child in &mut self.children {
+                    child.render_editor(ui, selection);
+                }
+
+                // Drop Zone inside Horizontal Layout?
+                // A bit tricky visually in horizontal, but let's try adding it at the end.
+                let (_response, payload_option) =
+                    ui.dnd_drop_zone::<String, _>(egui::Frame::NONE, |ui| {
+                        ui.label(" + ");
+                    });
+
+                if let Some(payload) = payload_option {
+                    if ui.input(|i| i.pointer.any_released()) {
+                        let new_widget: Box<dyn WidgetNode> = match payload.as_str() {
+                            "Button" => Box::new(ButtonWidget::default()),
+                            "Label" => Box::new(LabelWidget::default()),
+                            "Text Edit" => Box::new(TextEditWidget::default()),
+                            "Checkbox" => Box::new(CheckboxWidget::default()),
+                            "Slider" => Box::new(SliderWidget::default()),
+                            "Vertical Layout" => Box::new(VerticalLayout::default()),
+                            "Horizontal Layout" => Box::new(HorizontalLayout::default()),
+                            _ => return,
+                        };
+                        self.children.push(new_widget);
+                    }
+                }
+            })
+            .response;
+
+        let is_selected = selection.contains(&self.id);
+        if is_selected {
+            ui.painter().rect_stroke(
+                response.rect,
+                0.0,
+                egui::Stroke::new(2.0, egui::Color32::from_rgb(255, 165, 0)),
+                egui::StrokeKind::Outside,
+            );
+        }
+    }
+
+    fn inspect(&mut self, ui: &mut Ui, _known_variables: &[String]) {
+        ui.heading("Horizontal Layout Settings");
+        ui.label(format!("ID: {}", self.id));
+        ui.horizontal(|ui| {
+            ui.label("Spacing:");
+            ui.add(egui::DragValue::new(&mut self.spacing).speed(0.1));
+        });
+        ui.label(format!("Children count: {}", self.children.len()));
+    }
+
+    fn codegen(&self) -> proc_macro2::TokenStream {
+        let child_streams: Vec<_> = self.children.iter().map(|c| c.codegen()).collect();
+        quote! {
+            ui.horizontal(|ui| {
+                #(#child_streams)*
+            });
+        }
+    }
+
+    fn children(&self) -> Option<&Vec<Box<dyn WidgetNode>>> {
+        Some(&self.children)
+    }
+    fn children_mut(&mut self) -> Option<&mut Vec<Box<dyn WidgetNode>>> {
+        Some(&mut self.children)
+    }
+}
+
 /// A concrete implementation of a Button.
-/// Annotated with typetag to register it with the serialization system.
-/// [cite: 59]
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ButtonWidget {
     pub id: Uuid,
@@ -616,8 +715,9 @@ impl WidgetNode for SliderWidget {
         let max = self.max;
         if let Some(var) = self.bindings.get("value") {
             let ident = quote::format_ident!("{}", var);
-            // We assume the variable is numeric. In a real compiler we'd cast.
-            quote! { ui.add(egui::Slider::new(&mut self.#ident, #min..=#max)); }
+            // Use `as _` to allow the compiler to infer the correct numeric type (f64, f32, i32, etc)
+            // for the range limits based on the variable's type.
+            quote! { ui.add(egui::Slider::new(&mut self.#ident, (#min as _)..=(#max as _))); }
         } else {
             let val = self.value;
             quote! {

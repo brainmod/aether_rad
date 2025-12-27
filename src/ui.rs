@@ -63,6 +63,7 @@ impl<'a> AetherTabViewer<'a> {
             "Checkbox",
             "Slider",
             "Vertical Layout",
+            "Horizontal Layout",
         ];
 
         for widget_type in widgets {

@@ -22,3 +22,6 @@ proc-macro2 = "1.0"
 
 # Docking (Prepared for Phase 2) [cite: 75]
 egui_dock = "0.18.0"
+
+# Persistence
+rfd = "0.15"
