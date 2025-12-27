@@ -57,43 +57,53 @@ impl AetherColors {
     }
 }
 
-/// Widget type icons
-pub struct WidgetIcons;
+/// Widget type labels
+pub struct WidgetLabels;
 
-impl WidgetIcons {
+impl WidgetLabels {
     pub fn get(widget_name: &str) -> &'static str {
         match widget_name {
             // Layouts
-            "Vertical Layout" => "||",
-            "Horizontal Layout" => "==",
-            "Grid Layout" => "□",
+            "Vertical Layout" => "Vertical",
+            "Horizontal Layout" => "Horizontal",
+            "Grid Layout" => "Grid",
 
             // Inputs
-            "Button" => "( )",
-            "Checkbox" => "[✓]",
-            "Slider" => "◬",
-            "Text Edit" => "≡",
-            "ComboBox" => "≣",
+            "Button" => "Button",
+            "Checkbox" => "Checkbox",
+            "Slider" => "Slider",
+            "Text Edit" => "Text Edit",
+            "ComboBox" => "ComboBox",
 
             // Display
-            "Label" => "A",
-            "Progress Bar" => "▓",
-            "Image" => "◼",
-            "Separator" => "─",
-            "Spinner" => "↻",
-            "Hyperlink" => "∼",
+            "Label" => "Label",
+            "Progress Bar" => "Progress Bar",
+            "Image" => "Image",
+            "Separator" => "Separator",
+            "Spinner" => "Spinner",
+            "Hyperlink" => "Hyperlink",
 
             // Default
-            _ => "●",
+            _ => "Widget",
         }
     }
 
-    pub fn get_category_icon(category: &str) -> &'static str {
+    pub fn get_category_label(category: &str) -> &'static str {
         match category {
-            "Layouts" => "L",
-            "Inputs" => "I",
-            "Display" => "D",
-            _ => "?",
+            "Layouts" => "Layouts",
+            "Inputs" => "Inputs",
+            "Display" => "Display",
+            _ => "Other",
+        }
+    }
+
+    /// Get the widget type group (for color coding)
+    pub fn get_category(widget_name: &str) -> &'static str {
+        match widget_name {
+            "Vertical Layout" | "Horizontal Layout" | "Grid Layout" => "Layouts",
+            "Button" | "Checkbox" | "Slider" | "Text Edit" | "ComboBox" => "Inputs",
+            "Label" | "Progress Bar" | "Image" | "Separator" | "Spinner" | "Hyperlink" => "Display",
+            _ => "Other",
         }
     }
 }
@@ -276,21 +286,18 @@ pub fn code_text(text: &str) -> egui::RichText {
         .color(AetherColors::ACCENT_LIGHT)
 }
 
-/// Category label with icon
+/// Category label text
 #[allow(dead_code)]
 pub fn category_label(category: &str) -> egui::RichText {
-    let icon = WidgetIcons::get_category_icon(category);
-    egui::RichText::new(format!("{} {}", icon, category))
+    egui::RichText::new(WidgetLabels::get_category_label(category))
         .size(13.0)
         .strong()
         .color(AetherColors::SUBHEADING)
 }
 
-/// Widget label with icon for hierarchy/palette
-#[allow(dead_code)]
+/// Widget label for hierarchy/palette
 pub fn widget_label(widget_name: &str) -> String {
-    let icon = WidgetIcons::get(widget_name);
-    format!("{} {}", icon, widget_name)
+    WidgetLabels::get(widget_name).to_string()
 }
 
 /// Get color for widget category

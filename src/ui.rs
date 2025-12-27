@@ -1,6 +1,6 @@
 use crate::compiler::Compiler;
 use crate::model::{ProjectState, Variable, VariableType, WidgetNode};
-use crate::theme::{self, AetherColors, ThemeMode, WidgetIcons};
+use crate::theme::{self, AetherColors, ThemeMode};
 use crate::validator::{CodeValidator, ValidationStatus};
 use egui::{Color32, CornerRadius, RichText, Ui, WidgetText};
 use egui_dock::TabViewer;
@@ -31,16 +31,16 @@ impl<'a> TabViewer for AetherTabViewer<'a> {
     type Tab = AetherTab;
 
     fn title(&mut self, tab: &mut Self::Tab) -> WidgetText {
-        let icon = match tab {
-            AetherTab::Canvas => "■",
-            AetherTab::Palette => "P",
-            AetherTab::Hierarchy => "T",
-            AetherTab::Inspector => "I",
-            AetherTab::Output => "O",
-            AetherTab::Variables => "V",
-            AetherTab::CodePreview => "C",
+        let name = match tab {
+            AetherTab::Canvas => "Canvas",
+            AetherTab::Palette => "Palette",
+            AetherTab::Hierarchy => "Hierarchy",
+            AetherTab::Inspector => "Inspector",
+            AetherTab::Output => "Output",
+            AetherTab::Variables => "Variables",
+            AetherTab::CodePreview => "Code",
         };
-        format!("[{}]", icon).into()
+        name.into()
     }
 
     fn ui(&mut self, ui: &mut Ui, tab: &mut Self::Tab) {
@@ -246,11 +246,10 @@ impl<'a> AetherTabViewer<'a> {
                 "Unknown".to_string()
             };
 
-            // Header with icon
-            let icon = WidgetIcons::get(&widget_name);
+            // Header with widget label
             ui.label(theme::heading(&format!(
-                "{} {} Properties",
-                icon, widget_name
+                "{} Properties",
+                widget_name
             )));
             ui.add_space(4.0);
 
@@ -656,31 +655,31 @@ impl<'a> AetherTabViewer<'a> {
 /// Render a categorized widget section in the palette
 fn render_widget_category(ui: &mut Ui, category: &str, widgets: &[&str], accent_color: Color32) {
     let header = egui::CollapsingHeader::new(
-        RichText::new(format!(
-            "{} {}",
-            WidgetIcons::get_category_icon(category),
-            category
-        ))
-        .size(13.0)
-        .color(accent_color),
+        RichText::new(category)
+            .size(13.0)
+            .strong()
+            .color(accent_color),
     )
     .default_open(true);
 
     header.show(ui, |ui| {
         for widget_type in widgets {
-            let icon = WidgetIcons::get(widget_type);
+            let label = theme::WidgetLabels::get(widget_type);
             let id = egui::Id::new("palette").with(*widget_type);
 
             ui.dnd_drag_source(id, widget_type.to_string(), |ui| {
                 let response = ui.add(
-                    egui::Button::new(RichText::new(format!("{} {}", icon, widget_type)))
-                        .min_size(egui::vec2(ui.available_width() - 8.0, 28.0)),
+                    egui::Button::new(
+                        RichText::new(label)
+                            .color(accent_color)
+                    )
+                    .min_size(egui::vec2(ui.available_width() - 8.0, 28.0)),
                 );
 
                 // Show drag hint on hover
                 response.on_hover_text("Drag to canvas to add");
             });
-            ui.add_space(2.0);
+            ui.add_space(4.0);
         }
     });
 }
@@ -747,7 +746,7 @@ fn draw_hierarchy_node_styled(
 ) {
     let id = node.id();
     let is_selected = selection.contains(&id);
-    let icon = WidgetIcons::get(node.name());
+    let label = theme::WidgetLabels::get(node.name());
     let category_color = theme::widget_category_color(node.name());
 
     let children = node.children();
@@ -757,7 +756,7 @@ fn draw_hierarchy_node_styled(
     let indent = depth as f32 * 12.0;
 
     if has_children {
-        let display_text = format!("{} {}", icon, node.name());
+        let display_text = label.to_string();
         let text_color = if is_selected {
             AetherColors::ACCENT_LIGHT
         } else {
@@ -801,7 +800,7 @@ fn draw_hierarchy_node_styled(
         ui.horizontal(|ui| {
             ui.add_space(indent + 16.0); // Extra indent for leaf nodes
 
-            let display_text = format!("{} {}", icon, node.name());
+            let display_text = label;
             let text_color = if is_selected {
                 AetherColors::ACCENT_LIGHT
             } else {
@@ -809,7 +808,7 @@ fn draw_hierarchy_node_styled(
             };
 
             let response =
-                ui.selectable_label(is_selected, RichText::new(&display_text).color(text_color));
+                ui.selectable_label(is_selected, RichText::new(display_text).color(text_color));
 
             if response.clicked() {
                 selection.clear();
