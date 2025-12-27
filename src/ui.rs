@@ -248,5 +248,13 @@ pub fn default_layout() -> egui_dock::DockState<AetherTab> {
     // 4. Split Left (Palette) to add Variables below it
     tree.split_below(_left, 0.6, vec![AetherTab::Variables]);
 
+    // 5. Split Bottom of Canvas (center) for Output
+    // We need to find the node containing the Canvas again since indices change.
+    // For simplicity, we can just split the root's first child's second child...
+    // Or easier: split the "right" node (which contains canvas) from step 1?
+    // Actually, 'right' in step 1 was the center area.
+    // But 'right' was split in step 2. The left part of that split is the new center (Canvas).
+    tree.split_below(_center, 0.8, vec![AetherTab::Output]);
+
     dock_state
 }
