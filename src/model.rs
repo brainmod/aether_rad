@@ -88,6 +88,11 @@ pub struct ProjectState {
     ///
     #[serde(default = "default_project_name")]
     pub project_name: String,
+
+    /// Pending reorder operation (source_id, target_id).
+    /// Not serialized - runtime only.
+    #[serde(skip)]
+    pub pending_reorder: Option<(Uuid, Uuid)>,
 }
 
 fn default_project_name() -> String {
@@ -101,6 +106,7 @@ impl Clone for ProjectState {
             selection: self.selection.clone(),
             variables: self.variables.clone(),
             project_name: self.project_name.clone(),
+            pending_reorder: None, // Reset pending operations on clone
         }
     }
 }
@@ -112,6 +118,7 @@ impl ProjectState {
             selection: HashSet::new(),
             variables: HashMap::new(),
             project_name: default_project_name(),
+            pending_reorder: None,
         }
     }
 
@@ -135,6 +142,16 @@ impl ProjectState {
         }
 
         delete_node_recursive(self.root_node.as_mut(), id)
+    }
+
+    /// Find the parent of a widget by the child's ID
+    pub fn find_parent_mut(&mut self, child_id: Uuid) -> Option<&mut dyn WidgetNode> {
+        find_parent_recursive_mut(self.root_node.as_mut(), child_id)
+    }
+
+    /// Move a widget within its parent's children list
+    pub fn reorder_widget(&mut self, widget_id: Uuid, new_index: usize) -> bool {
+        reorder_widget_recursive(self.root_node.as_mut(), widget_id, new_index)
     }
 }
 
@@ -163,6 +180,55 @@ fn delete_node_recursive(node: &mut dyn WidgetNode, target: Uuid) -> bool {
         // If not found in direct children, recurse into each child
         for child in children.iter_mut() {
             if delete_node_recursive(child.as_mut(), target) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+fn find_parent_recursive_mut(node: &mut dyn WidgetNode, child_id: Uuid) -> Option<&mut dyn WidgetNode> {
+    // First, check if any direct child matches (without holding the borrow)
+    let has_matching_child = if let Some(children) = node.children() {
+        children.iter().any(|c| c.id() == child_id)
+    } else {
+        false
+    };
+
+    if has_matching_child {
+        return Some(node);
+    }
+
+    // Recurse into each child
+    if let Some(children) = node.children_mut() {
+        for child in children.iter_mut() {
+            if let Some(parent) = find_parent_recursive_mut(child.as_mut(), child_id) {
+                return Some(parent);
+            }
+        }
+    }
+    None
+}
+
+fn reorder_widget_recursive(node: &mut dyn WidgetNode, widget_id: Uuid, new_index: usize) -> bool {
+    if let Some(children) = node.children_mut() {
+        // Check if the widget is a direct child
+        if let Some(old_index) = children.iter().position(|c| c.id() == widget_id) {
+            if new_index < children.len() {
+                let widget = children.remove(old_index);
+                let insert_index = if new_index > old_index {
+                    new_index - 1
+                } else {
+                    new_index
+                };
+                children.insert(insert_index.min(children.len()), widget);
+                return true;
+            }
+        }
+
+        // Recurse into each child
+        for child in children.iter_mut() {
+            if reorder_widget_recursive(child.as_mut(), widget_id, new_index) {
                 return true;
             }
         }

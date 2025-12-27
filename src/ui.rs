@@ -82,7 +82,16 @@ impl<'a> AetherTabViewer<'a> {
     fn render_hierarchy(&mut self, ui: &mut Ui) {
         ui.heading("Tree View");
         let ps = &mut self.project_state;
-        draw_hierarchy_node(ui, ps.root_node.as_ref(), &mut ps.selection);
+
+        // Track if any reordering happened
+        let mut reorder_action: Option<(Uuid, Uuid)> = None;
+
+        draw_hierarchy_node(ui, ps.root_node.as_ref(), &mut ps.selection, &mut reorder_action);
+
+        // Store pending reorder operation for processing in app update (with undo)
+        if let Some((source_id, target_id)) = reorder_action {
+            ps.pending_reorder = Some((source_id, target_id));
+        }
     }
 
     fn render_inspector(&mut self, ui: &mut Ui) {
@@ -285,7 +294,12 @@ impl<'a> AetherTabViewer<'a> {
     }
 }
 
-fn draw_hierarchy_node(ui: &mut Ui, node: &dyn WidgetNode, selection: &mut HashSet<Uuid>) {
+fn draw_hierarchy_node(
+    ui: &mut Ui,
+    node: &dyn WidgetNode,
+    selection: &mut HashSet<Uuid>,
+    reorder_action: &mut Option<(Uuid, Uuid)>,
+) {
     let id = node.id();
     let is_selected = selection.contains(&id);
 
@@ -294,34 +308,89 @@ fn draw_hierarchy_node(ui: &mut Ui, node: &dyn WidgetNode, selection: &mut HashS
 
     if has_children {
         let id_source = id;
-        let color = if is_selected {
-            ui.visuals().selection.bg_fill
-        } else {
-            ui.visuals().text_color()
-        };
-        let title = egui::RichText::new(node.name()).color(color);
+        let drag_id = egui::Id::new("hierarchy_drag").with(id);
 
-        let header = egui::CollapsingHeader::new(title)
-            .id_salt(id_source)
-            .default_open(true);
+        // Wrap the collapsing header in a drag source
+        let header_response = ui.dnd_drag_source(drag_id, id, |ui| {
+            let color = if is_selected {
+                ui.visuals().selection.bg_fill
+            } else {
+                ui.visuals().text_color()
+            };
+            let title = egui::RichText::new(node.name()).color(color);
 
-        let body_response = header.show(ui, |ui| {
-            if let Some(children) = children {
-                for child in children {
-                    draw_hierarchy_node(ui, child.as_ref(), selection);
+            let header = egui::CollapsingHeader::new(title)
+                .id_salt(id_source)
+                .default_open(true);
+
+            header.show(ui, |ui| {
+                if let Some(children) = children {
+                    for child in children {
+                        draw_hierarchy_node(ui, child.as_ref(), selection, reorder_action);
+                    }
                 }
-            }
+            })
         });
 
-        if body_response.header_response.clicked() {
+        // Drop zone for containers
+        let (drop_inner, dropped_payload) = ui.dnd_drop_zone::<Uuid, ()>(egui::Frame::NONE, |_ui| {});
+
+        if drop_inner.response.dnd_hover_payload::<Uuid>().is_some() {
+            ui.painter().rect_filled(
+                header_response.response.rect,
+                0.0,
+                ui.visuals().selection.bg_fill.gamma_multiply(0.5),
+            );
+        }
+
+        if let Some(dragged_id) = dropped_payload {
+            if *dragged_id != id {
+                *reorder_action = Some((*dragged_id, id));
+            }
+        }
+
+        if header_response.response.clicked() {
             selection.clear();
             selection.insert(id);
         }
     } else {
-        if ui.selectable_label(is_selected, node.name()).clicked() {
-            selection.clear();
-            selection.insert(id);
-        }
+        // Leaf widget - add drag source and drop target
+        let drag_id = egui::Id::new("hierarchy_drag").with(id);
+
+        ui.horizontal(|ui| {
+            // Drag source
+            let response = ui.dnd_drag_source(drag_id, id, |ui| {
+                ui.selectable_label(is_selected, node.name())
+            }).response;
+
+            // Check for drop - egui's dnd_drop_zone returns (InnerResponse, Option<payload>)
+            // The second element is the released payload
+            let (drop_inner, dropped_payload) = ui.dnd_drop_zone::<Uuid, ()>(egui::Frame::NONE, |_ui| {
+                // Empty drop zone visualization
+            });
+
+            // Visual feedback on hover
+            if drop_inner.response.dnd_hover_payload::<Uuid>().is_some() {
+                ui.painter().rect_filled(
+                    response.rect,
+                    0.0,
+                    ui.visuals().selection.bg_fill.gamma_multiply(0.5),
+                );
+            }
+
+            // Handle drop
+            if let Some(dragged_id) = dropped_payload {
+                // Dropped! Record the reorder action
+                if *dragged_id != id {
+                    *reorder_action = Some((*dragged_id, id));
+                }
+            }
+
+            if response.clicked() {
+                selection.clear();
+                selection.insert(id);
+            }
+        });
     }
 }
 

@@ -127,6 +127,20 @@ fn regenerate_widget_ids(widget: Box<dyn crate::model::WidgetNode>) -> Box<dyn c
 
 impl App for AetherApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        // Process pending reorder operation with undo support
+        if let Some((source_id, target_id)) = self.project_state.pending_reorder.take() {
+            self.push_undo();
+
+            // Find the parent and apply reorder
+            if let Some(parent) = self.project_state.find_parent_mut(source_id) {
+                if let Some(children) = parent.children() {
+                    if let Some(target_idx) = children.iter().position(|c| c.id() == target_id) {
+                        self.project_state.reorder_widget(source_id, target_idx);
+                    }
+                }
+            }
+        }
+
         // Handle keyboard shortcuts
         ctx.input(|i| {
             // Copy: Ctrl+C (Cmd+C on Mac)
