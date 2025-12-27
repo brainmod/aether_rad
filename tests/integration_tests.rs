@@ -1,4 +1,4 @@
-use aether_rad::model::{ProjectState, Variable, VariableType};
+use aether_rad::model::{ProjectState, Variable, VariableType, WidgetEvent, Action};
 use aether_rad::widgets::{ButtonWidget, LabelWidget, VerticalLayout};
 use aether_rad::compiler::Compiler;
 
@@ -7,12 +7,16 @@ fn test_save_load_round_trip() {
     // Create a project with various widgets
     let mut root = VerticalLayout::default();
 
-    let button = ButtonWidget {
+    let mut button = ButtonWidget {
         id: uuid::Uuid::new_v4(),
         text: "Test Button".to_string(),
-        clicked_code: "self.counter += 1;".to_string(),
+        events: std::collections::HashMap::new(),
         bindings: std::collections::HashMap::new(),
     };
+    button.events.insert(
+        WidgetEvent::Clicked,
+        Action::Custom("self.counter += 1;".to_string()),
+    );
 
     let label = LabelWidget {
         id: uuid::Uuid::new_v4(),
@@ -61,12 +65,16 @@ fn test_code_generation_valid_rust() {
     // Create a simple project
     let mut root = VerticalLayout::default();
 
-    let button = ButtonWidget {
+    let mut button = ButtonWidget {
         id: uuid::Uuid::new_v4(),
         text: "Click Me".to_string(),
-        clicked_code: "println!(\"Button clicked!\");".to_string(),
+        events: std::collections::HashMap::new(),
         bindings: std::collections::HashMap::new(),
     };
+    button.events.insert(
+        WidgetEvent::Clicked,
+        Action::Custom("println!(\"Button clicked!\");".to_string()),
+    );
 
     root.children.push(Box::new(button));
 
@@ -106,7 +114,7 @@ fn test_widget_tree_manipulation() {
         children.push(Box::new(ButtonWidget {
             id: button_id,
             text: "Button 1".to_string(),
-            clicked_code: String::new(),
+            events: std::collections::HashMap::new(),
             bindings: std::collections::HashMap::new(),
         }));
 

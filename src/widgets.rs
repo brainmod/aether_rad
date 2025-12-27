@@ -70,6 +70,129 @@ fn check_resize_handle(_ui: &egui::Ui, rect: egui::Rect, mouse_pos: egui::Pos2) 
     None
 }
 
+/// Render an action editor in the Inspector
+fn render_action_editor(ui: &mut egui::Ui, action: &mut crate::model::Action, known_variables: &[String]) {
+    use crate::model::Action;
+
+    let action_ptr = action as *const _ as usize;
+
+    let action_type = match action {
+        Action::IncrementVariable(_) => "Increment",
+        Action::SetVariable(_, _) => "Set",
+        Action::Custom(_) => "Custom",
+    };
+
+    ui.horizontal(|ui| {
+        ui.label("Action Type:");
+        let mut selected = action_type.to_string();
+        egui::ComboBox::from_id_salt(format!("action_{}", action_ptr))
+            .selected_text(&selected)
+            .show_ui(ui, |ui| {
+                ui.selectable_value(&mut selected, "Increment".to_string(), "Increment");
+                ui.selectable_value(&mut selected, "Set".to_string(), "Set");
+                ui.selectable_value(&mut selected, "Custom".to_string(), "Custom");
+            });
+
+        // Change action type if needed
+        if selected != action_type {
+            match selected.as_str() {
+                "Increment" => *action = Action::IncrementVariable(
+                    known_variables.first().cloned().unwrap_or_default()
+                ),
+                "Set" => *action = Action::SetVariable(
+                    known_variables.first().cloned().unwrap_or_default(),
+                    "".to_string(),
+                ),
+                "Custom" => *action = Action::Custom(String::new()),
+                _ => {}
+            }
+        }
+    });
+
+    // Handle each action type with separate variables to avoid borrow conflicts
+    let mut should_update_inc_var = false;
+    let mut inc_var_new_value = String::new();
+
+    let mut should_update_set_var = false;
+    let mut set_var_new_value = String::new();
+
+    let mut should_update_set_value = false;
+    let mut set_value_new_value = String::new();
+
+    match action {
+        Action::IncrementVariable(var_name) => {
+            ui.horizontal(|ui| {
+                ui.label("Variable:");
+                let mut selected_var = var_name.clone();
+                egui::ComboBox::from_id_salt(format!("inc_var_{}", action_ptr))
+                    .selected_text(&selected_var)
+                    .show_ui(ui, |ui| {
+                        for var in known_variables {
+                            ui.selectable_value(&mut selected_var, var.clone(), var);
+                        }
+                    });
+                if selected_var != *var_name {
+                    inc_var_new_value = selected_var;
+                    should_update_inc_var = true;
+                }
+            });
+        }
+        Action::SetVariable(var_name, value) => {
+            ui.horizontal(|ui| {
+                ui.label("Variable:");
+                let mut selected_var = var_name.clone();
+                egui::ComboBox::from_id_salt(format!("set_var_{}", action_ptr))
+                    .selected_text(&selected_var)
+                    .show_ui(ui, |ui| {
+                        for var in known_variables {
+                            ui.selectable_value(&mut selected_var, var.clone(), var);
+                        }
+                    });
+                if selected_var != *var_name {
+                    set_var_new_value = selected_var;
+                    should_update_set_var = true;
+                }
+            });
+
+            ui.horizontal(|ui| {
+                ui.label("Value:");
+                if ui.text_edit_singleline(value).changed() {
+                    should_update_set_value = true;
+                    set_value_new_value = value.clone();
+                }
+            });
+        }
+        Action::Custom(code) => {
+            ui.label("Rust Code:");
+            let code_editor = egui::TextEdit::multiline(code)
+                .code_editor()
+                .desired_rows(3)
+                .desired_width(f32::INFINITY);
+            ui.add(code_editor);
+
+            if !code.trim().is_empty() {
+                if code.parse::<proc_macro2::TokenStream>().is_ok() {
+                    ui.colored_label(egui::Color32::GREEN, "✓ Valid Rust syntax");
+                } else {
+                    ui.colored_label(egui::Color32::RED, "✗ Invalid Rust syntax");
+                }
+            }
+        }
+    }
+
+    // Apply updates after the match to avoid borrow conflicts
+    if should_update_inc_var {
+        if let Action::IncrementVariable(var_name) = action {
+            *var_name = inc_var_new_value;
+        }
+    }
+    if should_update_set_var {
+        if let Action::SetVariable(var_name, _) = action {
+            *var_name = set_var_new_value;
+        }
+    }
+}
+
 /// A container that arranges children vertically.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct VerticalLayout {
@@ -452,7 +575,10 @@ impl WidgetNode for GridLayout {
 pub struct ButtonWidget {
     pub id: Uuid,
     pub text: String,
-    pub clicked_code: String, // Simulating a basic event action
+
+    // Maps event type to action
+    #[serde(default)]
+    pub events: std::collections::HashMap<crate::model::WidgetEvent, crate::model::Action>,
 
     // Maps property name (e.g. "text") to variable name (e.g. "counter")
     #[serde(default)]
@@ -464,7 +590,7 @@ impl Default for ButtonWidget {
         Self {
             id: Uuid::new_v4(),
             text: "Click Me".to_string(),
-            clicked_code: String::new(),
+            events: std::collections::HashMap::new(),
             bindings: std::collections::HashMap::new(),
         }
     }
@@ -552,29 +678,48 @@ impl WidgetNode for ButtonWidget {
         });
 
         ui.separator();
-        ui.heading("On Click Action");
-        ui.label("Write Rust code to execute when button is clicked:");
-        ui.label("Example: self.counter += 1;");
+        ui.heading("Events");
 
-        let code_editor = egui::TextEdit::multiline(&mut self.clicked_code)
-            .code_editor()
-            .desired_rows(5)
-            .desired_width(f32::INFINITY);
-        ui.add(code_editor);
+        // List all possible events
+        let possible_events = [
+            crate::model::WidgetEvent::Clicked,
+            crate::model::WidgetEvent::DoubleClicked,
+        ];
 
-        if !self.clicked_code.trim().is_empty() {
-            // Show validation feedback
-            if self.clicked_code.parse::<proc_macro2::TokenStream>().is_ok() {
-                ui.colored_label(egui::Color32::GREEN, "✓ Valid Rust syntax");
+        let mut events_to_add = None;
+        let mut events_to_remove = None;
+
+        for event in &possible_events {
+            if self.events.contains_key(event) {
+                ui.collapsing(format!("{}", event), |ui| {
+                    if let Some(action) = self.events.get_mut(event) {
+                        render_action_editor(ui, action, known_variables);
+                    }
+                    if ui.button("Remove Event").clicked() {
+                        events_to_remove = Some(*event);
+                    }
+                });
             } else {
-                ui.colored_label(egui::Color32::RED, "✗ Invalid Rust syntax");
+                if ui.button(format!("+ Add {}", event)).clicked() {
+                    events_to_add = Some(*event);
+                }
             }
+        }
+
+        if let Some(event) = events_to_add {
+            self.events.insert(event, crate::model::Action::Custom(String::new()));
+        }
+
+        if let Some(event) = events_to_remove {
+            self.events.remove(&event);
         }
     }
 
     // Generating the AST for the final Rust application.
     // [cite: 184]
     fn codegen(&self) -> proc_macro2::TokenStream {
+        use crate::model::WidgetEvent;
+
         let label_tokens = if let Some(var_name) = self.bindings.get("text") {
             let ident = quote::format_ident!("{}", var_name);
             quote! { &self.#ident }
@@ -583,23 +728,16 @@ impl WidgetNode for ButtonWidget {
             quote! { #text }
         };
 
-        // Parse and inject clicked_code if present
-        let action_code = if !self.clicked_code.trim().is_empty() {
-            // Parse the code string as Rust tokens
-            match self.clicked_code.parse::<proc_macro2::TokenStream>() {
-                Ok(tokens) => tokens,
-                Err(_) => {
-                    // If parsing fails, insert a comment indicating the error
-                    quote! { /* Invalid Rust code in clicked_code */ }
-                }
-            }
+        // Generate code for the clicked event if present
+        let clicked_code = if let Some(action) = self.events.get(&WidgetEvent::Clicked) {
+            action.to_code()
         } else {
-            quote! { /* No action code */ }
+            quote! {}
         };
 
         quote! {
             if ui.button(#label_tokens).clicked() {
-                #action_code
+                #clicked_code
             }
         }
     }
@@ -707,6 +845,8 @@ pub struct TextEditWidget {
     pub id: Uuid,
     pub text: String, // Fallback if not bound
     #[serde(default)]
+    pub events: std::collections::HashMap<crate::model::WidgetEvent, crate::model::Action>,
+    #[serde(default)]
     pub bindings: std::collections::HashMap<String, String>,
 }
 
@@ -715,6 +855,7 @@ impl Default for TextEditWidget {
         Self {
             id: Uuid::new_v4(),
             text: "".to_string(),
+            events: std::collections::HashMap::new(),
             bindings: std::collections::HashMap::new(),
         }
     }
@@ -781,12 +922,53 @@ impl WidgetNode for TextEditWidget {
                 }
             }
         });
+
+        ui.separator();
+        ui.heading("Events");
+
+        let mut events_to_add = None;
+        let mut events_to_remove = None;
+
+        let event = crate::model::WidgetEvent::Changed;
+        if self.events.contains_key(&event) {
+            ui.collapsing(format!("{}", event), |ui| {
+                if let Some(action) = self.events.get_mut(&event) {
+                    render_action_editor(ui, action, known_variables);
+                }
+                if ui.button("Remove Event").clicked() {
+                    events_to_remove = Some(event);
+                }
+            });
+        } else {
+            if ui.button(format!("+ Add {}", event)).clicked() {
+                events_to_add = Some(event);
+            }
+        }
+
+        if let Some(event) = events_to_add {
+            self.events.insert(event, crate::model::Action::Custom(String::new()));
+        }
+
+        if let Some(event) = events_to_remove {
+            self.events.remove(&event);
+        }
     }
 
     fn codegen(&self) -> proc_macro2::TokenStream {
+        use crate::model::WidgetEvent;
+
         if let Some(var) = self.bindings.get("value") {
             let ident = quote::format_ident!("{}", var);
-            quote! { ui.text_edit_singleline(&mut self.#ident); }
+            let changed_code = if let Some(action) = self.events.get(&WidgetEvent::Changed) {
+                action.to_code()
+            } else {
+                quote! {}
+            };
+            quote! {
+                if ui.text_edit_singleline(&mut self.#ident).changed() {
+                    #changed_code
+                }
+            }
         } else {
             // If not bound, it's just a placeholder or needs local state we don't track well in codegen yet
             quote! { ui.label("Unbound TextEdit"); }
@@ -801,6 +983,8 @@ pub struct CheckboxWidget {
     pub label: String,
     pub checked: bool,
     #[serde(default)]
+    pub events: std::collections::HashMap<crate::model::WidgetEvent, crate::model::Action>,
+    #[serde(default)]
     pub bindings: std::collections::HashMap<String, String>,
 }
 
@@ -810,6 +994,7 @@ impl Default for CheckboxWidget {
             id: Uuid::new_v4(),
             label: "Check me".to_string(),
             checked: false,
+            events: std::collections::HashMap::new(),
             bindings: std::collections::HashMap::new(),
         }
     }
@@ -875,13 +1060,54 @@ impl WidgetNode for CheckboxWidget {
                 }
             }
         });
+
+        ui.separator();
+        ui.heading("Events");
+
+        let mut events_to_add = None;
+        let mut events_to_remove = None;
+
+        let event = crate::model::WidgetEvent::Changed;
+        if self.events.contains_key(&event) {
+            ui.collapsing(format!("{}", event), |ui| {
+                if let Some(action) = self.events.get_mut(&event) {
+                    render_action_editor(ui, action, known_variables);
+                }
+                if ui.button("Remove Event").clicked() {
+                    events_to_remove = Some(event);
+                }
+            });
+        } else {
+            if ui.button(format!("+ Add {}", event)).clicked() {
+                events_to_add = Some(event);
+            }
+        }
+
+        if let Some(event) = events_to_add {
+            self.events.insert(event, crate::model::Action::Custom(String::new()));
+        }
+
+        if let Some(event) = events_to_remove {
+            self.events.remove(&event);
+        }
     }
 
     fn codegen(&self) -> proc_macro2::TokenStream {
+        use crate::model::WidgetEvent;
+
         let label = &self.label;
         if let Some(var) = self.bindings.get("checked") {
             let ident = quote::format_ident!("{}", var);
-            quote! { ui.checkbox(&mut self.#ident, #label); }
+            let changed_code = if let Some(action) = self.events.get(&WidgetEvent::Changed) {
+                action.to_code()
+            } else {
+                quote! {}
+            };
+            quote! {
+                if ui.checkbox(&mut self.#ident, #label).changed() {
+                    #changed_code
+                }
+            }
         } else {
             let val = self.checked;
             quote! {
@@ -900,6 +1126,8 @@ pub struct SliderWidget {
     pub max: f64,
     pub value: f64,
     #[serde(default)]
+    pub events: std::collections::HashMap<crate::model::WidgetEvent, crate::model::Action>,
+    #[serde(default)]
     pub bindings: std::collections::HashMap<String, String>,
 }
 
@@ -910,6 +1138,7 @@ impl Default for SliderWidget {
             min: 0.0,
             max: 100.0,
             value: 50.0,
+            events: std::collections::HashMap::new(),
             bindings: std::collections::HashMap::new(),
         }
     }
@@ -980,16 +1209,57 @@ impl WidgetNode for SliderWidget {
                 }
             }
         });
+
+        ui.separator();
+        ui.heading("Events");
+
+        let mut events_to_add = None;
+        let mut events_to_remove = None;
+
+        let event = crate::model::WidgetEvent::Changed;
+        if self.events.contains_key(&event) {
+            ui.collapsing(format!("{}", event), |ui| {
+                if let Some(action) = self.events.get_mut(&event) {
+                    render_action_editor(ui, action, known_variables);
+                }
+                if ui.button("Remove Event").clicked() {
+                    events_to_remove = Some(event);
+                }
+            });
+        } else {
+            if ui.button(format!("+ Add {}", event)).clicked() {
+                events_to_add = Some(event);
+            }
+        }
+
+        if let Some(event) = events_to_add {
+            self.events.insert(event, crate::model::Action::Custom(String::new()));
+        }
+
+        if let Some(event) = events_to_remove {
+            self.events.remove(&event);
+        }
     }
 
     fn codegen(&self) -> proc_macro2::TokenStream {
+        use crate::model::WidgetEvent;
+
         let min = self.min;
         let max = self.max;
         if let Some(var) = self.bindings.get("value") {
             let ident = quote::format_ident!("{}", var);
+            let changed_code = if let Some(action) = self.events.get(&WidgetEvent::Changed) {
+                action.to_code()
+            } else {
+                quote! {}
+            };
             // Use `as _` to allow the compiler to infer the correct numeric type (f64, f32, i32, etc)
             // for the range limits based on the variable's type.
-            quote! { ui.add(egui::Slider::new(&mut self.#ident, (#min as _)..=(#max as _))); }
+            quote! {
+                if ui.add(egui::Slider::new(&mut self.#ident, (#min as _)..=(#max as _))).changed() {
+                    #changed_code
+                }
+            }
         } else {
             let val = self.value;
             quote! {

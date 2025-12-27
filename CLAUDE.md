@@ -52,6 +52,9 @@ tests/          - Integration tests for serialization and code generation
 | Event Code Injection | `src/widgets.rs` | `clicked_code` with syntax validation |
 | Integration Tests | `tests/integration_tests.rs` | Round-trip, codegen, manipulation |
 | Gizmo System | `src/widgets.rs` | Orange outline, resize handles (Image) |
+| Light/Dark Theme Toggle | `src/theme.rs`, `src/app.rs`, `src/ui.rs` | Theme-aware colors, user-selectable |
+| Syntax Highlighting (Per-Token) | `src/syntax.rs`, `src/ui.rs` | LayoutJob-based coloring, theme-aware |
+| Cargo Check with Progress Feedback | `src/ui.rs`, `src/validator.rs` | Spinner animation, disabled button while checking |
 
 ### ✅ Implemented Widgets (11 total)
 
@@ -460,6 +463,30 @@ quote! {
 ```
 
 ---
+
+## Recent Improvements (Latest Session)
+
+### ✨ Light/Dark Theme Toggle
+- Added `ThemeMode` enum (Light/Dark) to `src/theme.rs`
+- Created `LightModeColors` struct with appropriate light-themed colors
+- Updated `configure_aether_theme()` to accept theme mode parameter
+- Theme toggle button in Output panel (☀️/🌙 icons)
+- All panels and components now respect theme setting
+- Real-time theme switching on every frame
+
+### ✨ Syntax Highlighting with Per-Token Colors
+- Replaced monochrome syntax highlighting with `LayoutJob`-based per-token coloring
+- Extracts style information from syntect and applies proper colors to each token
+- Theme-aware: uses "Solarized (light)" for light mode, "Solarized (dark)" for dark mode
+- Code preview now displays proper syntax coloring in all code sections
+- Implemented in `src/syntax.rs` with helper functions for color conversion
+
+### ✨ Cargo Check with Progress Feedback
+- Added visual spinner animation while cargo check runs
+- Button disabled during validation to prevent multiple concurrent checks
+- Status message updates: "⏳ Cargo check in progress..."
+- Spinner provides immediate visual feedback that work is happening
+- Extended `ValidationStatus` enum with proper checking state handling
 
 ## Reference Documentation
 

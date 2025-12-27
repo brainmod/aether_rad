@@ -27,3 +27,6 @@ egui_dock = "0.18.0"
 
 # Persistence
 rfd = "0.15"
+
+# Syntax Highlighting
+syntect = "5"

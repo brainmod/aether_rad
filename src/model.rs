@@ -19,6 +19,67 @@ impl std::fmt::Display for VariableType {
     }
 }
 
+/// Widget event types
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
+pub enum WidgetEvent {
+    Clicked,
+    Changed,
+    Hovered,
+    DoubleClicked,
+}
+
+impl std::fmt::Display for WidgetEvent {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                Self::Clicked => "On Click",
+                Self::Changed => "On Change",
+                Self::Hovered => "On Hover",
+                Self::DoubleClicked => "On Double Click",
+            }
+        )
+    }
+}
+
+/// Standard action types that can be executed on widget events
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum Action {
+    /// Increment a variable by 1
+    IncrementVariable(String),
+    /// Set a variable to a value
+    SetVariable(String, String),
+    /// Custom Rust code
+    Custom(String),
+}
+
+impl Action {
+    /// Convert the action to Rust code
+    pub fn to_code(&self) -> proc_macro2::TokenStream {
+        match self {
+            Action::IncrementVariable(var_name) => {
+                let ident = quote::format_ident!("{}", var_name);
+                quote::quote! { self.#ident += 1; }
+            }
+            Action::SetVariable(var_name, value) => {
+                let ident = quote::format_ident!("{}", var_name);
+                // Try to parse the value as a TokenStream, fallback to string literal
+                match value.parse::<proc_macro2::TokenStream>() {
+                    Ok(tokens) => quote::quote! { self.#ident = #tokens; },
+                    Err(_) => quote::quote! { self.#ident = #value.to_string(); },
+                }
+            }
+            Action::Custom(code) => {
+                match code.parse::<proc_macro2::TokenStream>() {
+                    Ok(tokens) => tokens,
+                    Err(_) => quote::quote! { /* Invalid Rust code */ },
+                }
+            }
+        }
+    }
+}
+
 /// A variable in the global application state.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Variable {

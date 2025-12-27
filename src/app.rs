@@ -1,6 +1,7 @@
 use crate::model::ProjectState;
-use crate::theme;
+use crate::theme::{self, ThemeMode};
 use crate::ui::{default_layout, AetherTab, AetherTabViewer};
+use crate::validator::ValidationStatus;
 use crate::widgets::{ButtonWidget, LabelWidget, VerticalLayout};
 use eframe::App;
 use egui_dock::{DockArea, DockState};
@@ -18,6 +19,12 @@ pub struct AetherApp {
 
     // Clipboard for copy/paste
     clipboard: Option<String>, // JSON representation of copied widget
+
+    // Code validation status
+    validation_status: ValidationStatus,
+
+    // Theme mode (Light or Dark)
+    theme_mode: ThemeMode,
 
     // Theme initialized flag
     theme_initialized: bool,
@@ -46,6 +53,8 @@ impl AetherApp {
             undo_stack: Vec::new(),
             redo_stack: Vec::new(),
             clipboard: None,
+            validation_status: ValidationStatus::NotRun,
+            theme_mode: ThemeMode::Dark,
             theme_initialized: false,
         }
     }
@@ -107,7 +116,8 @@ impl AetherApp {
     fn paste_widget(&mut self) {
         if let Some(json) = &self.clipboard {
             // Deserialize the widget
-            if let Ok(mut widget) = serde_json::from_str::<Box<dyn crate::model::WidgetNode>>(json) {
+            if let Ok(mut widget) = serde_json::from_str::<Box<dyn crate::model::WidgetNode>>(json)
+            {
                 self.push_undo();
 
                 // Regenerate UUID to make it unique
@@ -123,7 +133,9 @@ impl AetherApp {
 }
 
 /// Recursively regenerate all UUIDs in a widget tree
-fn regenerate_widget_ids(widget: Box<dyn crate::model::WidgetNode>) -> Box<dyn crate::model::WidgetNode> {
+fn regenerate_widget_ids(
+    widget: Box<dyn crate::model::WidgetNode>,
+) -> Box<dyn crate::model::WidgetNode> {
     // Clone the widget and serialize/deserialize to get a fresh copy
     // Then we can modify it
     let cloned = widget.clone_box();
@@ -136,9 +148,10 @@ fn regenerate_widget_ids(widget: Box<dyn crate::model::WidgetNode>) -> Box<dyn c
 
 impl App for AetherApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        // Apply theme once on first frame
+        // Apply theme on every frame (to support real-time toggling)
+        theme::configure_aether_theme(ctx, self.theme_mode);
+
         if !self.theme_initialized {
-            theme::configure_aether_theme(ctx);
             self.theme_initialized = true;
         }
 
@@ -261,6 +274,8 @@ impl App for AetherApp {
         // Create the viewer, passing mutable access to the project data
         let mut viewer = AetherTabViewer {
             project_state: &mut self.project_state,
+            validation_status: &mut self.validation_status,
+            theme_mode: &mut self.theme_mode,
         };
 
         // Render the docking area

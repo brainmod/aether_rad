@@ -1,7 +1,8 @@
 use crate::compiler::Compiler;
 use crate::model::{ProjectState, Variable, VariableType, WidgetNode};
-use crate::theme::{self, AetherColors, WidgetIcons};
-use egui::{Ui, WidgetText, RichText, Color32, CornerRadius};
+use crate::theme::{self, AetherColors, ThemeMode, WidgetIcons};
+use crate::validator::{CodeValidator, ValidationStatus};
+use egui::{Color32, CornerRadius, RichText, Ui, WidgetText};
 use egui_dock::TabViewer;
 use std::collections::HashSet;
 use uuid::Uuid;
@@ -22,6 +23,8 @@ pub enum AetherTab {
 // It holds a mutable reference to the ProjectState so tabs can modify it.
 pub struct AetherTabViewer<'a> {
     pub project_state: &'a mut ProjectState,
+    pub validation_status: &'a mut ValidationStatus,
+    pub theme_mode: &'a mut ThemeMode,
 }
 
 impl<'a> TabViewer for AetherTabViewer<'a> {
@@ -56,27 +59,59 @@ impl<'a> TabViewer for AetherTabViewer<'a> {
 impl<'a> AetherTabViewer<'a> {
     fn render_canvas(&mut self, ui: &mut Ui) {
         // CENTER: The main visual editor with styled frame
+        let is_light = !ui.ctx().style().visuals.dark_mode;
+        let outer_bg = if is_light {
+            Color32::from_rgb(250, 250, 252)
+        } else {
+            Color32::from_rgb(30, 30, 35)
+        };
+        let muted_color = if is_light {
+            Color32::from_rgb(120, 120, 130)
+        } else {
+            AetherColors::MUTED
+        };
+
         egui::Frame::new()
-            .fill(Color32::from_rgb(30, 30, 35))
+            .fill(outer_bg)
             .inner_margin(egui::Margin::same(16))
             .show(ui, |ui| {
                 // Canvas header
                 ui.horizontal(|ui| {
-                    ui.label(RichText::new("📐 Design Canvas").size(12.0).color(AetherColors::MUTED));
+                    ui.label(
+                        RichText::new("📐 Design Canvas")
+                            .size(12.0)
+                            .color(muted_color),
+                    );
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        ui.label(RichText::new(format!("Root: {}", self.project_state.root_layout_type()))
+                        ui.label(
+                            RichText::new(format!(
+                                "Root: {}",
+                                self.project_state.root_layout_type()
+                            ))
                             .size(11.0)
-                            .color(AetherColors::MUTED));
+                            .color(muted_color),
+                        );
                     });
                 });
                 ui.add_space(8.0);
 
                 // Canvas content area
+                let canvas_bg = if is_light {
+                    Color32::from_rgb(240, 240, 245)
+                } else {
+                    Color32::from_rgb(40, 40, 48)
+                };
+                let canvas_stroke = if is_light {
+                    Color32::from_rgb(220, 220, 225)
+                } else {
+                    Color32::from_rgb(55, 55, 65)
+                };
+
                 egui::Frame::new()
-                    .fill(Color32::from_rgb(40, 40, 48))
+                    .fill(canvas_bg)
                     .inner_margin(egui::Margin::same(12))
                     .corner_radius(CornerRadius::same(8))
-                    .stroke(egui::Stroke::new(1.0, Color32::from_rgb(55, 55, 65)))
+                    .stroke(egui::Stroke::new(1.0, canvas_stroke))
                     .show(ui, |ui| {
                         self.project_state
                             .root_node
@@ -89,39 +124,48 @@ impl<'a> AetherTabViewer<'a> {
         ui.add_space(4.0);
         ui.label(theme::heading("Widget Palette"));
         ui.add_space(4.0);
-        ui.label(RichText::new("Drag widgets to the canvas").size(11.0).color(AetherColors::MUTED));
+        ui.label(
+            RichText::new("Drag widgets to the canvas")
+                .size(11.0)
+                .color(AetherColors::MUTED),
+        );
         ui.add_space(8.0);
 
         egui::ScrollArea::vertical().show(ui, |ui| {
             // Layout widgets
-            render_widget_category(ui, "Layouts", &[
-                "Vertical Layout",
-                "Horizontal Layout",
-                "Grid Layout",
-            ], AetherColors::LAYOUT_COLOR);
+            render_widget_category(
+                ui,
+                "Layouts",
+                &["Vertical Layout", "Horizontal Layout", "Grid Layout"],
+                AetherColors::LAYOUT_COLOR,
+            );
 
             ui.add_space(8.0);
 
             // Input widgets
-            render_widget_category(ui, "Inputs", &[
-                "Button",
-                "Checkbox",
-                "Slider",
-                "Text Edit",
-                "ComboBox",
-            ], AetherColors::INPUT_COLOR);
+            render_widget_category(
+                ui,
+                "Inputs",
+                &["Button", "Checkbox", "Slider", "Text Edit", "ComboBox"],
+                AetherColors::INPUT_COLOR,
+            );
 
             ui.add_space(8.0);
 
             // Display widgets
-            render_widget_category(ui, "Display", &[
-                "Label",
-                "Progress Bar",
-                "Image",
-                "Separator",
-                "Spinner",
-                "Hyperlink",
-            ], AetherColors::DISPLAY_COLOR);
+            render_widget_category(
+                ui,
+                "Display",
+                &[
+                    "Label",
+                    "Progress Bar",
+                    "Image",
+                    "Separator",
+                    "Spinner",
+                    "Hyperlink",
+                ],
+                AetherColors::DISPLAY_COLOR,
+            );
         });
     }
 
@@ -133,7 +177,11 @@ impl<'a> AetherTabViewer<'a> {
         let ps = &mut self.project_state;
 
         // Keyboard navigation hint
-        ui.label(RichText::new("↑↓ Navigate • Esc Clear").size(10.0).color(AetherColors::MUTED));
+        ui.label(
+            RichText::new("↑↓ Navigate • Esc Clear")
+                .size(10.0)
+                .color(AetherColors::MUTED),
+        );
         ui.add_space(8.0);
 
         // Keyboard navigation for hierarchy
@@ -177,7 +225,7 @@ impl<'a> AetherTabViewer<'a> {
         }
 
         // Tree view with styled frame
-        theme::section_frame(ui).show(ui, |ui| {
+        theme::section_frame(ui.ctx()).show(ui, |ui| {
             egui::ScrollArea::vertical().show(ui, |ui| {
                 draw_hierarchy_node_styled(ui, ps.root_node.as_ref(), &mut ps.selection, 0);
             });
@@ -200,12 +248,15 @@ impl<'a> AetherTabViewer<'a> {
 
             // Header with icon
             let icon = WidgetIcons::get(&widget_name);
-            ui.label(theme::heading(&format!("{} {} Properties", icon, widget_name)));
+            ui.label(theme::heading(&format!(
+                "{} {} Properties",
+                icon, widget_name
+            )));
             ui.add_space(4.0);
 
             // If root layout is selected, show layout type switcher
             if is_root {
-                theme::section_frame(ui).show(ui, |ui| {
+                theme::section_frame(ui.ctx()).show(ui, |ui| {
                     ui.label(theme::subheading("Root Layout Type"));
                     ui.add_space(4.0);
 
@@ -213,9 +264,21 @@ impl<'a> AetherTabViewer<'a> {
                     let mut selected_type = current_type.to_string();
 
                     ui.horizontal(|ui| {
-                        ui.selectable_value(&mut selected_type, "Vertical Layout".to_string(), "⬇ Vertical");
-                        ui.selectable_value(&mut selected_type, "Horizontal Layout".to_string(), "➡ Horizontal");
-                        ui.selectable_value(&mut selected_type, "Grid Layout".to_string(), "⊞ Grid");
+                        ui.selectable_value(
+                            &mut selected_type,
+                            "Vertical Layout".to_string(),
+                            "⬇ Vertical",
+                        );
+                        ui.selectable_value(
+                            &mut selected_type,
+                            "Horizontal Layout".to_string(),
+                            "➡ Horizontal",
+                        );
+                        ui.selectable_value(
+                            &mut selected_type,
+                            "Grid Layout".to_string(),
+                            "⊞ Grid",
+                        );
                     });
 
                     if selected_type != current_type {
@@ -227,14 +290,14 @@ impl<'a> AetherTabViewer<'a> {
 
             // Widget properties
             if let Some(node) = self.project_state.find_node_mut(id) {
-                theme::section_frame(ui).show(ui, |ui| {
+                theme::section_frame(ui.ctx()).show(ui, |ui| {
                     node.inspect(ui, &known_vars);
                 });
 
                 // Widget actions (not for root)
                 if !is_root {
                     ui.add_space(8.0);
-                    theme::section_frame(ui).show(ui, |ui| {
+                    theme::section_frame(ui.ctx()).show(ui, |ui| {
                         ui.label(theme::subheading("Actions"));
                         ui.add_space(6.0);
 
@@ -251,9 +314,12 @@ impl<'a> AetherTabViewer<'a> {
                         ui.add_space(8.0);
 
                         // Delete button with warning color
-                        if ui.add(egui::Button::new(
-                            RichText::new("🗑 Delete Widget").color(AetherColors::ERROR)
-                        )).clicked() {
+                        if ui
+                            .add(egui::Button::new(
+                                RichText::new("🗑 Delete Widget").color(AetherColors::ERROR),
+                            ))
+                            .clicked()
+                        {
                             if self.project_state.delete_widget(id) {
                                 self.project_state.selection.clear();
                             }
@@ -268,13 +334,17 @@ impl<'a> AetherTabViewer<'a> {
         // No selection state
         ui.label(theme::heading("Inspector"));
         ui.add_space(8.0);
-        theme::section_frame(ui).show(ui, |ui| {
+        theme::section_frame(ui.ctx()).show(ui, |ui| {
             ui.vertical_centered(|ui| {
                 ui.add_space(20.0);
                 ui.label(RichText::new("👆").size(32.0));
                 ui.add_space(8.0);
                 ui.label(RichText::new("Select a widget").color(AetherColors::MUTED));
-                ui.label(RichText::new("to view its properties").size(11.0).color(AetherColors::MUTED));
+                ui.label(
+                    RichText::new("to view its properties")
+                        .size(11.0)
+                        .color(AetherColors::MUTED),
+                );
                 ui.add_space(20.0);
             });
         });
@@ -282,32 +352,107 @@ impl<'a> AetherTabViewer<'a> {
 
     fn render_output(&mut self, ui: &mut Ui) {
         ui.add_space(4.0);
-        ui.label(theme::heading("Project Output"));
+
+        // Header with theme toggle
+        ui.horizontal(|ui| {
+            ui.label(theme::heading("Project Output"));
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                let theme_icon = match *self.theme_mode {
+                    ThemeMode::Dark => "☀️",  // Sun when in dark mode (to switch to light)
+                    ThemeMode::Light => "🌙", // Moon when in light mode (to switch to dark)
+                };
+
+                if ui
+                    .button(theme_icon)
+                    .on_hover_text("Toggle theme")
+                    .clicked()
+                {
+                    self.theme_mode.toggle();
+                }
+            });
+        });
         ui.add_space(8.0);
 
         // Project settings
-        theme::section_frame(ui).show(ui, |ui| {
+        theme::section_frame(ui.ctx()).show(ui, |ui| {
             ui.label(theme::subheading("Project Settings"));
             ui.add_space(6.0);
 
             ui.horizontal(|ui| {
                 ui.label("Name:");
-                ui.add(egui::TextEdit::singleline(&mut self.project_state.project_name)
-                    .desired_width(150.0));
+                ui.add(
+                    egui::TextEdit::singleline(&mut self.project_state.project_name)
+                        .desired_width(150.0),
+                );
+            });
+        });
+
+        ui.add_space(8.0);
+
+        // Validation section
+        theme::section_frame(ui.ctx()).show(ui, |ui| {
+            ui.label(theme::subheading("Code Validation"));
+            ui.add_space(6.0);
+
+            let is_checking = self.validation_status.is_checking();
+
+            if ui
+                .add_enabled(
+                    !is_checking,
+                    egui::Button::new(
+                        RichText::new("🔧 Check Code").color(AetherColors::ACCENT_LIGHT),
+                    ),
+                )
+                .clicked()
+            {
+                *self.validation_status = ValidationStatus::Checking;
+                let project_state_clone = self.project_state.clone();
+                match CodeValidator::validate(&project_state_clone) {
+                    Ok(_) => {
+                        *self.validation_status = ValidationStatus::Success;
+                    }
+                    Err(err) => {
+                        *self.validation_status = ValidationStatus::Failed(err);
+                    }
+                }
+            }
+
+            ui.add_space(8.0);
+
+            // Display validation status with progress animation
+            ui.horizontal(|ui| {
+                // Show spinner if checking
+                if is_checking {
+                    ui.add(egui::Spinner::new());
+                }
+
+                let status_text = self.validation_status.display_text();
+                let status_color = if self.validation_status.is_success() {
+                    AetherColors::SUCCESS
+                } else if matches!(self.validation_status, ValidationStatus::Failed(_)) {
+                    Color32::from_rgb(255, 100, 100)
+                } else {
+                    AetherColors::MUTED
+                };
+
+                ui.label(RichText::new(status_text).size(11.0).color(status_color));
             });
         });
 
         ui.add_space(8.0);
 
         // Export actions
-        theme::section_frame(ui).show(ui, |ui| {
+        theme::section_frame(ui.ctx()).show(ui, |ui| {
             ui.label(theme::subheading("Export"));
             ui.add_space(6.0);
 
             ui.horizontal(|ui| {
-                if ui.add(egui::Button::new(
-                    RichText::new("📁 Export Project").color(AetherColors::ACCENT_LIGHT)
-                )).clicked() {
+                if ui
+                    .add(egui::Button::new(
+                        RichText::new("📁 Export Project").color(AetherColors::ACCENT_LIGHT),
+                    ))
+                    .clicked()
+                {
                     if let Some(folder) = rfd::FileDialog::new().pick_folder() {
                         let src_dir = folder.join("src");
                         if let Err(e) = std::fs::create_dir_all(&src_dir) {
@@ -316,7 +461,8 @@ impl<'a> AetherTabViewer<'a> {
                         }
 
                         let cargo_toml_path = folder.join("Cargo.toml");
-                        let cargo_toml = Compiler::generate_cargo_toml(&self.project_state.project_name);
+                        let cargo_toml =
+                            Compiler::generate_cargo_toml(&self.project_state.project_name);
                         if let Err(e) = std::fs::write(&cargo_toml_path, cargo_toml) {
                             eprintln!("Failed to write Cargo.toml: {}", e);
                             return;
@@ -336,19 +482,29 @@ impl<'a> AetherTabViewer<'a> {
                             return;
                         }
 
-                        println!("✓ Project '{}' exported to: {}", self.project_state.project_name, folder.display());
+                        println!(
+                            "✓ Project '{}' exported to: {}",
+                            self.project_state.project_name,
+                            folder.display()
+                        );
                     }
                 }
 
                 if ui.button("🖨 Print to Console").clicked() {
                     let code = Compiler::generate_app_rs(&self.project_state);
-                    println!("--- Generated app.rs ---\n{}\n------------------------", code);
+                    println!(
+                        "--- Generated app.rs ---\n{}\n------------------------",
+                        code
+                    );
                 }
             });
 
             ui.add_space(4.0);
-            ui.label(RichText::new("Export creates a complete Cargo project")
-                .size(11.0).color(AetherColors::MUTED));
+            ui.label(
+                RichText::new("Export creates a complete Cargo project")
+                    .size(11.0)
+                    .color(AetherColors::MUTED),
+            );
         });
     }
 
@@ -356,13 +512,20 @@ impl<'a> AetherTabViewer<'a> {
         ui.add_space(4.0);
         ui.label(theme::heading("State Variables"));
         ui.add_space(4.0);
-        ui.label(RichText::new("Define app state for bindings").size(11.0).color(AetherColors::MUTED));
+        ui.label(
+            RichText::new("Define app state for bindings")
+                .size(11.0)
+                .color(AetherColors::MUTED),
+        );
         ui.add_space(8.0);
 
         // Add variable button
-        if ui.add(egui::Button::new(
-            RichText::new("+ Add Variable").color(AetherColors::SUCCESS)
-        )).clicked() {
+        if ui
+            .add(egui::Button::new(
+                RichText::new("+ Add Variable").color(AetherColors::SUCCESS),
+            ))
+            .clicked()
+        {
             let name = format!("var_{}", self.project_state.variables.len());
             self.project_state.variables.insert(
                 name.clone(),
@@ -384,17 +547,26 @@ impl<'a> AetherTabViewer<'a> {
 
         egui::ScrollArea::vertical().show(ui, |ui| {
             for key in keys {
-                theme::section_frame(ui).show(ui, |ui| {
+                theme::section_frame(ui.ctx()).show(ui, |ui| {
                     if let Some(var) = self.project_state.variables.get_mut(&key) {
                         ui.horizontal(|ui| {
                             ui.label(RichText::new(&var.name).strong());
-                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                if ui.add(egui::Button::new(
-                                    RichText::new("🗑").color(AetherColors::ERROR)
-                                ).small()).clicked() {
-                                    to_remove = Some(key.clone());
-                                }
-                            });
+                            ui.with_layout(
+                                egui::Layout::right_to_left(egui::Align::Center),
+                                |ui| {
+                                    if ui
+                                        .add(
+                                            egui::Button::new(
+                                                RichText::new("🗑").color(AetherColors::ERROR),
+                                            )
+                                            .small(),
+                                        )
+                                        .clicked()
+                                    {
+                                        to_remove = Some(key.clone());
+                                    }
+                                },
+                            );
                         });
 
                         ui.add_space(4.0);
@@ -405,13 +577,33 @@ impl<'a> AetherTabViewer<'a> {
                                 .selected_text(format!("{}", var.v_type))
                                 .width(80.0)
                                 .show_ui(ui, |ui| {
-                                    ui.selectable_value(&mut var.v_type, VariableType::String, "String");
-                                    ui.selectable_value(&mut var.v_type, VariableType::Integer, "Integer");
-                                    ui.selectable_value(&mut var.v_type, VariableType::Boolean, "Boolean");
-                                    ui.selectable_value(&mut var.v_type, VariableType::Float, "Float");
+                                    ui.selectable_value(
+                                        &mut var.v_type,
+                                        VariableType::String,
+                                        "String",
+                                    );
+                                    ui.selectable_value(
+                                        &mut var.v_type,
+                                        VariableType::Integer,
+                                        "Integer",
+                                    );
+                                    ui.selectable_value(
+                                        &mut var.v_type,
+                                        VariableType::Boolean,
+                                        "Boolean",
+                                    );
+                                    ui.selectable_value(
+                                        &mut var.v_type,
+                                        VariableType::Float,
+                                        "Float",
+                                    );
                                 });
 
-                            ui.label(RichText::new("Value:").size(11.0).color(AetherColors::MUTED));
+                            ui.label(
+                                RichText::new("Value:")
+                                    .size(11.0)
+                                    .color(AetherColors::MUTED),
+                            );
                             ui.add(egui::TextEdit::singleline(&mut var.value).desired_width(80.0));
                         });
                     }
@@ -429,12 +621,20 @@ impl<'a> AetherTabViewer<'a> {
         ui.add_space(4.0);
         ui.label(theme::heading("Generated Code"));
         ui.add_space(4.0);
-        ui.label(RichText::new("Live preview of output").size(11.0).color(AetherColors::MUTED));
+        ui.label(
+            RichText::new("Live preview of output")
+                .size(11.0)
+                .color(AetherColors::MUTED),
+        );
         ui.add_space(8.0);
 
         egui::ScrollArea::vertical().show(ui, |ui| {
             // Cargo.toml
-            render_code_section(ui, "📦 Cargo.toml", &Compiler::generate_cargo_toml(&self.project_state.project_name));
+            render_code_section(
+                ui,
+                "📦 Cargo.toml",
+                &Compiler::generate_cargo_toml(&self.project_state.project_name),
+            );
 
             ui.add_space(8.0);
 
@@ -444,7 +644,11 @@ impl<'a> AetherTabViewer<'a> {
             ui.add_space(8.0);
 
             // app.rs
-            render_code_section(ui, "⚙️ src/app.rs", &Compiler::generate_app_rs(&self.project_state));
+            render_code_section(
+                ui,
+                "⚙️ src/app.rs",
+                &Compiler::generate_app_rs(&self.project_state),
+            );
         });
     }
 }
@@ -452,9 +656,13 @@ impl<'a> AetherTabViewer<'a> {
 /// Render a categorized widget section in the palette
 fn render_widget_category(ui: &mut Ui, category: &str, widgets: &[&str], accent_color: Color32) {
     let header = egui::CollapsingHeader::new(
-        RichText::new(format!("{} {}", WidgetIcons::get_category_icon(category), category))
-            .size(13.0)
-            .color(accent_color)
+        RichText::new(format!(
+            "{} {}",
+            WidgetIcons::get_category_icon(category),
+            category
+        ))
+        .size(13.0)
+        .color(accent_color),
     )
     .default_open(true);
 
@@ -466,7 +674,7 @@ fn render_widget_category(ui: &mut Ui, category: &str, widgets: &[&str], accent_
             ui.dnd_drag_source(id, widget_type.to_string(), |ui| {
                 let response = ui.add(
                     egui::Button::new(RichText::new(format!("{} {}", icon, widget_type)))
-                        .min_size(egui::vec2(ui.available_width() - 8.0, 28.0))
+                        .min_size(egui::vec2(ui.available_width() - 8.0, 28.0)),
                 );
 
                 // Show drag hint on hover
@@ -477,25 +685,55 @@ fn render_widget_category(ui: &mut Ui, category: &str, widgets: &[&str], accent_
     });
 }
 
-/// Render a code section with header
+/// Render a code section with header and syntax highlighting
 fn render_code_section(ui: &mut Ui, title: &str, code: &str) {
-    theme::section_frame(ui).show(ui, |ui| {
+    use crate::syntax;
+
+    theme::section_frame(ui.ctx()).show(ui, |ui| {
         ui.horizontal(|ui| {
-            ui.label(RichText::new(title).size(12.0).strong().color(AetherColors::ACCENT_LIGHT));
+            ui.label(
+                RichText::new(title)
+                    .size(12.0)
+                    .strong()
+                    .color(AetherColors::ACCENT_LIGHT),
+            );
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                ui.label(RichText::new(format!("{} lines", code.lines().count()))
-                    .size(10.0).color(AetherColors::MUTED));
+                ui.label(
+                    RichText::new(format!("{} lines", code.lines().count()))
+                        .size(10.0)
+                        .color(AetherColors::MUTED),
+                );
             });
         });
         ui.add_space(6.0);
 
-        // Code display with monospace font
+        // Code display with syntax highlighting
+        let is_light = !ui.ctx().style().visuals.dark_mode;
+        let code_bg = if is_light {
+            Color32::from_rgb(245, 245, 248)
+        } else {
+            Color32::from_rgb(25, 25, 30)
+        };
+
         egui::Frame::new()
-            .fill(Color32::from_rgb(25, 25, 30))
+            .fill(code_bg)
             .inner_margin(egui::Margin::same(8))
             .corner_radius(CornerRadius::same(4))
             .show(ui, |ui| {
-                ui.add(egui::Label::new(RichText::new(code).monospace().size(11.0)).wrap());
+                // Choose highlighter based on file type
+                let mut highlighted_code = if title.contains("Cargo.toml") {
+                    syntax::highlight_toml(code, is_light)
+                } else {
+                    // Rust files
+                    syntax::highlight_rust(code, is_light)
+                };
+
+                // Set font size for the layout job
+                for section in &mut highlighted_code.sections {
+                    section.format.font_id.size = 11.0;
+                }
+
+                ui.add(egui::Label::new(highlighted_code).wrap());
             });
     });
 }
@@ -530,7 +768,7 @@ fn draw_hierarchy_node_styled(
             ui.add_space(indent);
 
             let header = egui::CollapsingHeader::new(
-                RichText::new(&display_text).color(text_color).strong()
+                RichText::new(&display_text).color(text_color).strong(),
             )
             .id_salt(id)
             .default_open(true);
@@ -570,10 +808,8 @@ fn draw_hierarchy_node_styled(
                 category_color
             };
 
-            let response = ui.selectable_label(
-                is_selected,
-                RichText::new(&display_text).color(text_color)
-            );
+            let response =
+                ui.selectable_label(is_selected, RichText::new(&display_text).color(text_color));
 
             if response.clicked() {
                 selection.clear();
@@ -603,7 +839,11 @@ pub fn default_layout() -> egui_dock::DockState<AetherTab> {
     tree.split_below(_left, 0.6, vec![AetherTab::Variables]);
 
     // 5. Split Bottom of Canvas (center) for Output and CodePreview (tabbed together)
-    tree.split_below(_center, 0.75, vec![AetherTab::Output, AetherTab::CodePreview]);
+    tree.split_below(
+        _center,
+        0.75,
+        vec![AetherTab::Output, AetherTab::CodePreview],
+    );
 
     dock_state
 }
