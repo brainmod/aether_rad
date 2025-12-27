@@ -65,6 +65,8 @@ impl<'a> AetherTabViewer<'a> {
             "Checkbox",
             "Slider",
             "Progress Bar",
+            "ComboBox",
+            "Image",
             "Vertical Layout",
             "Horizontal Layout",
         ];
@@ -114,6 +116,14 @@ impl<'a> AetherTabViewer<'a> {
         ui.heading("Compilation Output");
         ui.separator();
 
+        // Project name editor
+        ui.horizontal(|ui| {
+            ui.label("Project Name:");
+            ui.text_edit_singleline(&mut self.project_state.project_name);
+        });
+
+        ui.separator();
+
         if ui.button("Generate Code (stdout)").clicked() {
             // Print to stdout for quick debugging
             let code = Compiler::generate_app_rs(&self.project_state);
@@ -135,7 +145,7 @@ impl<'a> AetherTabViewer<'a> {
 
                 // Write Cargo.toml
                 let cargo_toml_path = folder.join("Cargo.toml");
-                let cargo_toml = Compiler::generate_cargo_toml("my_app");
+                let cargo_toml = Compiler::generate_cargo_toml(&self.project_state.project_name);
                 if let Err(e) = std::fs::write(&cargo_toml_path, cargo_toml) {
                     eprintln!("Failed to write Cargo.toml: {}", e);
                     return;
@@ -157,7 +167,7 @@ impl<'a> AetherTabViewer<'a> {
                     return;
                 }
 
-                println!("✓ Project exported successfully to: {}", folder.display());
+                println!("✓ Project '{}' exported successfully to: {}", self.project_state.project_name, folder.display());
             }
         }
 
@@ -252,7 +262,7 @@ impl<'a> AetherTabViewer<'a> {
         egui::ScrollArea::vertical().show(ui, |ui| {
             ui.group(|ui| {
                 ui.label("Cargo.toml");
-                let cargo_toml = Compiler::generate_cargo_toml("my_app");
+                let cargo_toml = Compiler::generate_cargo_toml(&self.project_state.project_name);
                 ui.code(&cargo_toml);
             });
 

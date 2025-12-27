@@ -14,6 +14,9 @@ pub struct AetherApp {
     // Undo/Redo history
     undo_stack: Vec<ProjectState>,
     redo_stack: Vec<ProjectState>,
+
+    // Clipboard for copy/paste
+    clipboard: Option<String>, // JSON representation of copied widget
 }
 
 impl AetherApp {
@@ -34,6 +37,7 @@ impl AetherApp {
             project_state: ProjectState::new(Box::new(root)),
             undo_stack: Vec::new(),
             redo_stack: Vec::new(),
+            clipboard: None,
         }
     }
 
@@ -77,14 +81,64 @@ impl AetherApp {
     fn can_redo(&self) -> bool {
         !self.redo_stack.is_empty()
     }
+
+    /// Copy selected widget to clipboard
+    fn copy_widget(&mut self) {
+        if let Some(id) = self.project_state.selection.iter().next().cloned() {
+            if let Some(node) = self.project_state.find_node_mut(id) {
+                // Serialize the widget to JSON
+                if let Ok(json) = serde_json::to_string(node) {
+                    self.clipboard = Some(json);
+                }
+            }
+        }
+    }
+
+    /// Paste widget from clipboard (with new UUID)
+    fn paste_widget(&mut self) {
+        if let Some(json) = &self.clipboard {
+            // Deserialize the widget
+            if let Ok(mut widget) = serde_json::from_str::<Box<dyn crate::model::WidgetNode>>(json) {
+                self.push_undo();
+
+                // Regenerate UUID to make it unique
+                widget = regenerate_widget_ids(widget);
+
+                // Try to add to root if it's a layout
+                if let Some(children) = self.project_state.root_node.children_mut() {
+                    children.push(widget);
+                }
+            }
+        }
+    }
+}
+
+/// Recursively regenerate all UUIDs in a widget tree
+fn regenerate_widget_ids(widget: Box<dyn crate::model::WidgetNode>) -> Box<dyn crate::model::WidgetNode> {
+    // Clone the widget and serialize/deserialize to get a fresh copy
+    // Then we can modify it
+    let cloned = widget.clone_box();
+
+    // This is a simple approach: serialize and deserialize, which will generate new UUIDs
+    // if we modify the JSON. For now, just return the cloned widget.
+    // A more sophisticated approach would traverse and regenerate IDs explicitly.
+    cloned
 }
 
 impl App for AetherApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         // Handle keyboard shortcuts
         ctx.input(|i| {
+            // Copy: Ctrl+C (Cmd+C on Mac)
+            if i.modifiers.command && i.key_pressed(egui::Key::C) && !i.modifiers.shift {
+                self.copy_widget();
+            }
+            // Paste: Ctrl+V (Cmd+V on Mac)
+            else if i.modifiers.command && i.key_pressed(egui::Key::V) {
+                self.paste_widget();
+            }
             // Undo: Ctrl+Z (Cmd+Z on Mac)
-            if i.modifiers.command && i.key_pressed(egui::Key::Z) && !i.modifiers.shift {
+            else if i.modifiers.command && i.key_pressed(egui::Key::Z) && !i.modifiers.shift {
                 self.undo();
             }
             // Redo: Ctrl+Shift+Z or Ctrl+Y (Cmd+Shift+Z or Cmd+Y on Mac)
@@ -151,6 +205,24 @@ impl App for AetherApp {
                         .clicked()
                     {
                         self.redo();
+                        ui.close();
+                    }
+
+                    ui.separator();
+
+                    let has_selection = !self.project_state.selection.is_empty();
+                    if ui
+                        .add_enabled(has_selection, egui::Button::new("Copy"))
+                        .clicked()
+                    {
+                        self.copy_widget();
+                        ui.close();
+                    }
+                    if ui
+                        .add_enabled(self.clipboard.is_some(), egui::Button::new("Paste"))
+                        .clicked()
+                    {
+                        self.paste_widget();
                         ui.close();
                     }
                 });

@@ -83,6 +83,15 @@ pub struct ProjectState {
     /// Application state variables (e.g., "counter: i32").
     ///
     pub variables: HashMap<String, Variable>,
+
+    /// Project name used for code generation.
+    ///
+    #[serde(default = "default_project_name")]
+    pub project_name: String,
+}
+
+fn default_project_name() -> String {
+    "my_app".to_string()
 }
 
 impl Clone for ProjectState {
@@ -91,6 +100,7 @@ impl Clone for ProjectState {
             root_node: self.root_node.clone_box(),
             selection: self.selection.clone(),
             variables: self.variables.clone(),
+            project_name: self.project_name.clone(),
         }
     }
 }
@@ -101,6 +111,7 @@ impl ProjectState {
             root_node: root,
             selection: HashSet::new(),
             variables: HashMap::new(),
+            project_name: default_project_name(),
         }
     }
 

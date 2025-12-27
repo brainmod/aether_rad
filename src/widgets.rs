@@ -83,6 +83,8 @@ impl WidgetNode for VerticalLayout {
                     "Checkbox" => Box::new(CheckboxWidget::default()),
                     "Slider" => Box::new(SliderWidget::default()),
                     "Progress Bar" => Box::new(ProgressBarWidget::default()),
+                    "ComboBox" => Box::new(ComboBoxWidget::default()),
+                    "Image" => Box::new(ImageWidget::default()),
                     "Vertical Layout" => Box::new(VerticalLayout::default()),
                     "Horizontal Layout" => Box::new(HorizontalLayout::default()),
                     _ => return,
@@ -186,6 +188,8 @@ impl WidgetNode for HorizontalLayout {
                             "Checkbox" => Box::new(CheckboxWidget::default()),
                             "Slider" => Box::new(SliderWidget::default()),
                             "Progress Bar" => Box::new(ProgressBarWidget::default()),
+                            "ComboBox" => Box::new(ComboBoxWidget::default()),
+                            "Image" => Box::new(ImageWidget::default()),
                             "Vertical Layout" => Box::new(VerticalLayout::default()),
                             "Horizontal Layout" => Box::new(HorizontalLayout::default()),
                             _ => return,
@@ -858,6 +862,297 @@ impl WidgetNode for ProgressBarWidget {
         } else {
             let val = self.value;
             quote! { ui.add(egui::ProgressBar::new(#val).show_percentage()); }
+        }
+    }
+}
+
+// --- ComboBox ---
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ComboBoxWidget {
+    pub id: Uuid,
+    pub label: String,
+    pub options: Vec<String>,
+    pub selected: usize,
+    #[serde(default)]
+    pub bindings: std::collections::HashMap<String, String>,
+}
+
+impl Default for ComboBoxWidget {
+    fn default() -> Self {
+        Self {
+            id: Uuid::new_v4(),
+            label: "Select:".to_string(),
+            options: vec!["Option 1".to_string(), "Option 2".to_string(), "Option 3".to_string()],
+            selected: 0,
+            bindings: std::collections::HashMap::new(),
+        }
+    }
+}
+
+#[typetag::serde]
+impl WidgetNode for ComboBoxWidget {
+    fn clone_box(&self) -> Box<dyn WidgetNode> {
+        Box::new(self.clone())
+    }
+
+    fn id(&self) -> Uuid {
+        self.id
+    }
+
+    fn name(&self) -> &str {
+        "ComboBox"
+    }
+
+    fn render_editor(&mut self, ui: &mut Ui, selection: &mut HashSet<Uuid>) {
+        ui.horizontal(|ui| {
+            ui.label(&self.label);
+
+            let selected_text = self.options.get(self.selected).map(|s| s.as_str()).unwrap_or("");
+            let response = egui::ComboBox::from_id_salt(format!("combo_{}", self.id))
+                .selected_text(selected_text)
+                .show_ui(ui, |ui| {
+                    for (idx, opt) in self.options.iter().enumerate() {
+                        ui.selectable_value(&mut self.selected, idx, opt);
+                    }
+                });
+
+            if response.response.clicked() {
+                selection.clear();
+                selection.insert(self.id);
+            }
+
+            if selection.contains(&self.id) {
+                ui.painter().rect_stroke(
+                    response.response.rect,
+                    0.0,
+                    egui::Stroke::new(2.0, egui::Color32::from_rgb(255, 165, 0)),
+                    egui::StrokeKind::Outside,
+                );
+            }
+        });
+    }
+
+    fn inspect(&mut self, ui: &mut Ui, known_variables: &[String]) {
+        ui.heading("ComboBox Properties");
+
+        ui.horizontal(|ui| {
+            ui.label("Label:");
+            ui.text_edit_singleline(&mut self.label);
+        });
+
+        ui.separator();
+        ui.label("Options:");
+
+        let mut to_remove = None;
+        for (idx, opt) in self.options.iter_mut().enumerate() {
+            ui.horizontal(|ui| {
+                ui.text_edit_singleline(opt);
+                if ui.button("🗑").clicked() {
+                    to_remove = Some(idx);
+                }
+            });
+        }
+
+        if let Some(idx) = to_remove {
+            self.options.remove(idx);
+            if self.selected >= self.options.len() && !self.options.is_empty() {
+                self.selected = self.options.len() - 1;
+            }
+        }
+
+        if ui.button("+ Add Option").clicked() {
+            self.options.push(format!("Option {}", self.options.len() + 1));
+        }
+
+        ui.separator();
+
+        ui.horizontal(|ui| {
+            ui.label("Bind Selected Index:");
+            let is_bound = self.bindings.contains_key("selected");
+            let mut bound_mode = is_bound;
+            if ui.checkbox(&mut bound_mode, "Bind").changed() {
+                if bound_mode {
+                    let first = known_variables.first().cloned().unwrap_or_default();
+                    self.bindings.insert("selected".to_string(), first);
+                } else {
+                    self.bindings.remove("selected");
+                }
+            }
+            if bound_mode {
+                let current = self.bindings.get("selected").cloned().unwrap_or_default();
+                let mut selected = current.clone();
+                egui::ComboBox::from_id_salt("combo_bind")
+                    .selected_text(&selected)
+                    .show_ui(ui, |ui| {
+                        for v in known_variables {
+                            ui.selectable_value(&mut selected, v.clone(), v);
+                        }
+                    });
+                if selected != current {
+                    self.bindings.insert("selected".to_string(), selected);
+                }
+            }
+        });
+    }
+
+    fn codegen(&self) -> proc_macro2::TokenStream {
+        let label = &self.label;
+        let options: Vec<_> = self.options.iter().map(|s| s.as_str()).collect();
+
+        if let Some(var) = self.bindings.get("selected") {
+            let ident = quote::format_ident!("{}", var);
+            quote! {
+                ui.horizontal(|ui| {
+                    ui.label(#label);
+                    let options = vec![#(#options),*];
+                    let selected_text = options.get(self.#ident).unwrap_or(&"");
+                    egui::ComboBox::from_label("")
+                        .selected_text(selected_text)
+                        .show_ui(ui, |ui| {
+                            for (idx, opt) in options.iter().enumerate() {
+                                ui.selectable_value(&mut self.#ident, idx, opt);
+                            }
+                        });
+                });
+            }
+        } else {
+            let selected = self.selected;
+            quote! {
+                ui.horizontal(|ui| {
+                    ui.label(#label);
+                    let mut selected = #selected;
+                    let options = vec![#(#options),*];
+                    let selected_text = options.get(selected).unwrap_or(&"");
+                    egui::ComboBox::from_label("")
+                        .selected_text(selected_text)
+                        .show_ui(ui, |ui| {
+                            for (idx, opt) in options.iter().enumerate() {
+                                ui.selectable_value(&mut selected, idx, opt);
+                            }
+                        });
+                });
+            }
+        }
+    }
+}
+
+// --- Image ---
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ImageWidget {
+    pub id: Uuid,
+    pub path: String,
+    pub width: Option<f32>,
+    pub height: Option<f32>,
+}
+
+impl Default for ImageWidget {
+    fn default() -> Self {
+        Self {
+            id: Uuid::new_v4(),
+            path: "".to_string(),
+            width: Some(100.0),
+            height: None, // Maintain aspect ratio
+        }
+    }
+}
+
+#[typetag::serde]
+impl WidgetNode for ImageWidget {
+    fn clone_box(&self) -> Box<dyn WidgetNode> {
+        Box::new(self.clone())
+    }
+
+    fn id(&self) -> Uuid {
+        self.id
+    }
+
+    fn name(&self) -> &str {
+        "Image"
+    }
+
+    fn render_editor(&mut self, ui: &mut Ui, selection: &mut HashSet<Uuid>) {
+        let response = if self.path.is_empty() {
+            ui.label("[No Image]")
+        } else {
+            ui.label(format!("🖼 {}", self.path.split('/').last().unwrap_or(&self.path)))
+        };
+
+        let response = response.interact(egui::Sense::click());
+
+        if response.clicked() {
+            selection.clear();
+            selection.insert(self.id);
+        }
+
+        if selection.contains(&self.id) {
+            ui.painter().rect_stroke(
+                response.rect,
+                0.0,
+                egui::Stroke::new(2.0, egui::Color32::from_rgb(255, 165, 0)),
+                egui::StrokeKind::Outside,
+            );
+        }
+    }
+
+    fn inspect(&mut self, ui: &mut Ui, _known_variables: &[String]) {
+        ui.heading("Image Properties");
+
+        ui.horizontal(|ui| {
+            ui.label("Path:");
+            ui.text_edit_singleline(&mut self.path);
+        });
+
+        if ui.button("📁 Browse...").clicked() {
+            if let Some(path) = rfd::FileDialog::new()
+                .add_filter("Images", &["png", "jpg", "jpeg", "gif", "bmp"])
+                .pick_file()
+            {
+                if let Some(path_str) = path.to_str() {
+                    self.path = path_str.to_string();
+                }
+            }
+        }
+
+        ui.separator();
+
+        ui.horizontal(|ui| {
+            ui.label("Width:");
+            let mut has_width = self.width.is_some();
+            if ui.checkbox(&mut has_width, "").changed() {
+                self.width = if has_width { Some(100.0) } else { None };
+            }
+            if let Some(ref mut w) = self.width {
+                ui.add(egui::DragValue::new(w).speed(1.0).range(10.0..=1000.0));
+            }
+        });
+
+        ui.horizontal(|ui| {
+            ui.label("Height:");
+            let mut has_height = self.height.is_some();
+            if ui.checkbox(&mut has_height, "").changed() {
+                self.height = if has_height { Some(100.0) } else { None };
+            }
+            if let Some(ref mut h) = self.height {
+                ui.add(egui::DragValue::new(h).speed(1.0).range(10.0..=1000.0));
+            }
+        });
+    }
+
+    fn codegen(&self) -> proc_macro2::TokenStream {
+        let path = &self.path;
+
+        let size_tokens = match (self.width, self.height) {
+            (Some(w), Some(h)) => quote! { .max_size(egui::vec2(#w, #h)) },
+            (Some(w), None) => quote! { .max_width(#w) },
+            (None, Some(h)) => quote! { .max_height(#h) },
+            (None, None) => quote! {},
+        };
+
+        quote! {
+            ui.add(
+                egui::Image::new(#path)
+                    #size_tokens
+            );
         }
     }
 }
