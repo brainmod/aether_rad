@@ -2,7 +2,7 @@ use egui::Ui;
 use proc_macro2::TokenStream;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use uuid::Uuid;
 
 /// Asset metadata for images and other resources

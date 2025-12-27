@@ -30,3 +30,17 @@ rfd = "0.15"
 
 # Syntax Highlighting
 syntect = "5"
+
+# WASM support
+web-sys = { version = "0.3", optional = true }
+wasm-bindgen = { version = "0.2", optional = true }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+# Override dependencies for WASM
+web-sys = { version = "0.3", features = ["Window", "Document", "HtmlElement"] }
+wasm-bindgen = "0.2"
+
+[features]
+default = ["native"]
+native = []
+wasm = ["web-sys", "wasm-bindgen"]

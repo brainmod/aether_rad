@@ -2,6 +2,7 @@
 
 pub mod app;
 pub mod compiler;
+pub mod io;
 pub mod model;
 pub mod syntax;
 pub mod theme;

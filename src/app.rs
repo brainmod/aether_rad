@@ -213,10 +213,7 @@ impl App for AetherApp {
                 ui.menu_button("File", |ui| {
                     if ui.button("Save Project").clicked() {
                         self.push_undo();
-                        if let Some(path) = rfd::FileDialog::new()
-                            .add_filter("Aether Project", &["json"])
-                            .save_file()
-                        {
+                        if let Some(path) = crate::io::save_file("project.json") {
                             if let Ok(file) = std::fs::File::create(path) {
                                 let _ = serde_json::to_writer_pretty(file, &self.project_state);
                             }
@@ -225,10 +222,7 @@ impl App for AetherApp {
                     }
                     if ui.button("Load Project").clicked() {
                         self.push_undo();
-                        if let Some(path) = rfd::FileDialog::new()
-                            .add_filter("Aether Project", &["json"])
-                            .pick_file()
-                        {
+                        if let Some(path) = crate::io::pick_file("Aether Project") {
                             if let Ok(file) = std::fs::File::open(path) {
                                 let reader = std::io::BufReader::new(file);
                                 if let Ok(state) = serde_json::from_reader(reader) {

@@ -553,7 +553,7 @@ impl<'a> AetherTabViewer<'a> {
                     ))
                     .clicked()
                 {
-                    if let Some(folder) = rfd::FileDialog::new().pick_folder() {
+                    if let Some(folder) = crate::io::pick_folder() {
                         let src_dir = folder.join("src");
                         if let Err(e) = std::fs::create_dir_all(&src_dir) {
                             eprintln!("Failed to create src directory: {}", e);

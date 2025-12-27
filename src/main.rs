@@ -1,5 +1,6 @@
 mod app;
 mod compiler;
+mod io;
 mod model;
 mod syntax;
 mod theme;

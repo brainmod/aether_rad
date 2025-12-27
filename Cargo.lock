@@ -131,6 +131,8 @@ dependencies = [
  "syntect",
  "typetag",
  "uuid",
+ "wasm-bindgen",
+ "web-sys",
 ]
 
 [[package]]

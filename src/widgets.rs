@@ -1674,10 +1674,7 @@ impl WidgetNode for ImageWidget {
         });
 
         if ui.button("📁 Browse...").clicked() {
-            if let Some(path) = rfd::FileDialog::new()
-                .add_filter("Images", &["png", "jpg", "jpeg", "gif", "bmp"])
-                .pick_file()
-            {
+            if let Some(path) = crate::io::pick_file("Images") {
                 if let Some(path_str) = path.to_str() {
                     self.path = path_str.to_string();
                 }
