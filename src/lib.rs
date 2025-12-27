@@ -5,3 +5,4 @@ pub mod widgets;
 pub mod compiler;
 pub mod ui;
 pub mod app;
+pub mod theme;

@@ -1,6 +1,7 @@
 use crate::model::ProjectState;
+use crate::theme;
 use crate::ui::{default_layout, AetherTab, AetherTabViewer};
-use crate::widgets::{ButtonWidget, VerticalLayout};
+use crate::widgets::{ButtonWidget, LabelWidget, VerticalLayout};
 use eframe::App;
 use egui_dock::{DockArea, DockState};
 
@@ -17,14 +18,21 @@ pub struct AetherApp {
 
     // Clipboard for copy/paste
     clipboard: Option<String>, // JSON representation of copied widget
+
+    // Theme initialized flag
+    theme_initialized: bool,
 }
 
 impl AetherApp {
     pub fn new(_cc: &eframe::CreationContext<'_>) -> Self {
-        // Initialize with a default project
+        // Initialize with a demo project
         let mut root = VerticalLayout::default();
+        root.children.push(Box::new(LabelWidget {
+            text: "Welcome to Aether RAD".into(),
+            ..Default::default()
+        }));
         root.children.push(Box::new(ButtonWidget {
-            text: "Hello Aether".into(),
+            text: "Click Me".into(),
             ..Default::default()
         }));
         root.children.push(Box::new(ButtonWidget {
@@ -38,6 +46,7 @@ impl AetherApp {
             undo_stack: Vec::new(),
             redo_stack: Vec::new(),
             clipboard: None,
+            theme_initialized: false,
         }
     }
 
@@ -127,6 +136,12 @@ fn regenerate_widget_ids(widget: Box<dyn crate::model::WidgetNode>) -> Box<dyn c
 
 impl App for AetherApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        // Apply theme once on first frame
+        if !self.theme_initialized {
+            theme::configure_aether_theme(ctx);
+            self.theme_initialized = true;
+        }
+
         // Process pending reorder operation with undo support
         if let Some((source_id, target_id)) = self.project_state.pending_reorder.take() {
             self.push_undo();

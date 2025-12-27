@@ -1,0 +1,205 @@
+use egui::{Color32, CornerRadius, Stroke};
+
+/// Aether RAD color palette
+pub struct AetherColors;
+
+impl AetherColors {
+    // Primary accent color (blue)
+    pub const ACCENT: Color32 = Color32::from_rgb(66, 150, 250);
+    pub const ACCENT_LIGHT: Color32 = Color32::from_rgb(100, 170, 255);
+    pub const ACCENT_DARK: Color32 = Color32::from_rgb(45, 120, 210);
+
+    // Selection/Gizmo colors
+    pub const SELECTION: Color32 = Color32::from_rgb(255, 165, 0); // Orange
+
+    // Status colors
+    pub const SUCCESS: Color32 = Color32::from_rgb(80, 200, 120);
+    pub const WARNING: Color32 = Color32::from_rgb(255, 180, 50);
+    pub const ERROR: Color32 = Color32::from_rgb(255, 85, 85);
+
+    // Widget category colors
+    pub const LAYOUT_COLOR: Color32 = Color32::from_rgb(150, 120, 255); // Purple
+    pub const INPUT_COLOR: Color32 = Color32::from_rgb(80, 180, 255);  // Blue
+    pub const DISPLAY_COLOR: Color32 = Color32::from_rgb(120, 200, 150); // Green
+
+    // Text hierarchy
+    pub const HEADING: Color32 = Color32::from_rgb(230, 230, 230);
+    pub const SUBHEADING: Color32 = Color32::from_rgb(180, 180, 180);
+    pub const MUTED: Color32 = Color32::from_rgb(130, 130, 130);
+
+    // Backgrounds
+    pub const PANEL_BG: Color32 = Color32::from_rgb(35, 35, 40);
+    pub const SECTION_BG: Color32 = Color32::from_rgb(45, 45, 52);
+
+    // Helper for semi-transparent colors (not const)
+    pub fn selection_fill() -> Color32 {
+        Color32::from_rgba_unmultiplied(255, 165, 0, 30)
+    }
+
+    pub fn drop_zone_hover() -> Color32 {
+        Color32::from_rgba_unmultiplied(66, 150, 250, 40)
+    }
+}
+
+/// Widget type icons
+pub struct WidgetIcons;
+
+impl WidgetIcons {
+    pub fn get(widget_name: &str) -> &'static str {
+        match widget_name {
+            // Layouts
+            "Vertical Layout" => "⬇",
+            "Horizontal Layout" => "➡",
+            "Grid Layout" => "⊞",
+
+            // Inputs
+            "Button" => "🔘",
+            "Checkbox" => "☑",
+            "Slider" => "◐",
+            "Text Edit" => "✎",
+            "ComboBox" => "☰",
+
+            // Display
+            "Label" => "𝐀",
+            "Progress Bar" => "▰",
+            "Image" => "🖼",
+
+            // Default
+            _ => "◆",
+        }
+    }
+
+    pub fn get_category_icon(category: &str) -> &'static str {
+        match category {
+            "Layouts" => "📐",
+            "Inputs" => "🎛",
+            "Display" => "🖥",
+            _ => "📦",
+        }
+    }
+}
+
+/// Configure the egui theme for Aether RAD
+pub fn configure_aether_theme(ctx: &egui::Context) {
+    let mut style = (*ctx.style()).clone();
+
+    // Spacing improvements
+    style.spacing.item_spacing = egui::vec2(8.0, 6.0);
+    style.spacing.button_padding = egui::vec2(10.0, 5.0);
+    style.spacing.window_margin = egui::Margin::same(12);
+    style.spacing.indent = 18.0;
+
+    // Rounded corners for all widgets
+    let rounding = CornerRadius::same(6);
+    style.visuals.widgets.noninteractive.corner_radius = rounding;
+    style.visuals.widgets.inactive.corner_radius = rounding;
+    style.visuals.widgets.hovered.corner_radius = rounding;
+    style.visuals.widgets.active.corner_radius = rounding;
+    style.visuals.widgets.open.corner_radius = rounding;
+
+    // Window/frame rounding
+    style.visuals.window_corner_radius = CornerRadius::same(8);
+    style.visuals.menu_corner_radius = CornerRadius::same(6);
+
+    // Selection color
+    style.visuals.selection.bg_fill = AetherColors::ACCENT;
+    style.visuals.selection.stroke = Stroke::new(1.0, AetherColors::ACCENT_LIGHT);
+
+    // Hyperlink color
+    style.visuals.hyperlink_color = AetherColors::ACCENT_LIGHT;
+
+    // Widget styling
+    style.visuals.widgets.hovered.bg_fill = Color32::from_rgb(60, 60, 70);
+    style.visuals.widgets.hovered.weak_bg_fill = Color32::from_rgb(55, 55, 65);
+    style.visuals.widgets.active.bg_fill = Color32::from_rgb(50, 50, 60);
+
+    // Button styling - more visible
+    style.visuals.widgets.inactive.weak_bg_fill = Color32::from_rgb(50, 50, 58);
+    style.visuals.widgets.inactive.bg_fill = Color32::from_rgb(55, 55, 65);
+
+    // Collapsing header styling
+    style.visuals.collapsing_header_frame = true;
+
+    // Striped tables
+    style.visuals.striped = true;
+
+    ctx.set_style(style);
+}
+
+/// Create a styled section frame
+pub fn section_frame(_ui: &egui::Ui) -> egui::Frame {
+    egui::Frame::new()
+        .fill(AetherColors::SECTION_BG)
+        .inner_margin(egui::Margin::same(10))
+        .outer_margin(egui::Margin::symmetric(0, 4))
+        .corner_radius(CornerRadius::same(6))
+        .stroke(Stroke::new(1.0, Color32::from_rgb(60, 60, 70)))
+}
+
+/// Create a panel header frame
+pub fn panel_header_frame() -> egui::Frame {
+    egui::Frame::new()
+        .fill(Color32::from_rgb(40, 40, 48))
+        .inner_margin(egui::Margin::symmetric(10, 8))
+        .corner_radius(CornerRadius::same(4))
+}
+
+/// Styled heading text
+pub fn heading(text: &str) -> egui::RichText {
+    egui::RichText::new(text)
+        .size(16.0)
+        .strong()
+        .color(AetherColors::HEADING)
+}
+
+/// Styled subheading text
+pub fn subheading(text: &str) -> egui::RichText {
+    egui::RichText::new(text)
+        .size(13.0)
+        .strong()
+        .color(AetherColors::SUBHEADING)
+}
+
+/// Muted/secondary text
+#[allow(dead_code)]
+pub fn muted(text: &str) -> egui::RichText {
+    egui::RichText::new(text)
+        .size(11.0)
+        .color(AetherColors::MUTED)
+}
+
+/// Code/monospace text
+#[allow(dead_code)]
+pub fn code_text(text: &str) -> egui::RichText {
+    egui::RichText::new(text)
+        .size(11.0)
+        .monospace()
+        .color(AetherColors::ACCENT_LIGHT)
+}
+
+/// Category label with icon
+#[allow(dead_code)]
+pub fn category_label(category: &str) -> egui::RichText {
+    let icon = WidgetIcons::get_category_icon(category);
+    egui::RichText::new(format!("{} {}", icon, category))
+        .size(13.0)
+        .strong()
+        .color(AetherColors::SUBHEADING)
+}
+
+/// Widget label with icon for hierarchy/palette
+#[allow(dead_code)]
+pub fn widget_label(widget_name: &str) -> String {
+    let icon = WidgetIcons::get(widget_name);
+    format!("{} {}", icon, widget_name)
+}
+
+/// Get color for widget category
+pub fn widget_category_color(widget_name: &str) -> Color32 {
+    match widget_name {
+        "Vertical Layout" | "Horizontal Layout" | "Grid Layout" => AetherColors::LAYOUT_COLOR,
+        "Button" | "Checkbox" | "Slider" | "Text Edit" | "ComboBox" => AetherColors::INPUT_COLOR,
+        "Label" | "Progress Bar" | "Image" => AetherColors::DISPLAY_COLOR,
+        _ => AetherColors::MUTED,
+    }
+}

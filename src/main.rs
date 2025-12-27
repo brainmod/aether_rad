@@ -1,6 +1,7 @@
 mod app;
 mod compiler;
 mod model;
+mod theme;
 mod ui;
 mod widgets;
 
