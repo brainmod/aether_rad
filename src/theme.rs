@@ -64,36 +64,36 @@ impl WidgetIcons {
     pub fn get(widget_name: &str) -> &'static str {
         match widget_name {
             // Layouts
-            "Vertical Layout" => "⬇",
-            "Horizontal Layout" => "➡",
-            "Grid Layout" => "⊞",
+            "Vertical Layout" => "||",
+            "Horizontal Layout" => "==",
+            "Grid Layout" => "□",
 
             // Inputs
-            "Button" => "🔘",
-            "Checkbox" => "☑",
-            "Slider" => "◐",
-            "Text Edit" => "✎",
-            "ComboBox" => "☰",
+            "Button" => "( )",
+            "Checkbox" => "[✓]",
+            "Slider" => "◬",
+            "Text Edit" => "≡",
+            "ComboBox" => "≣",
 
             // Display
             "Label" => "A",
-            "Progress Bar" => "▰",
-            "Image" => "🖼",
-            "Separator" => "━",
-            "Spinner" => "⟲",
-            "Hyperlink" => "🔗",
+            "Progress Bar" => "▓",
+            "Image" => "◼",
+            "Separator" => "─",
+            "Spinner" => "↻",
+            "Hyperlink" => "∼",
 
             // Default
-            _ => "◆",
+            _ => "●",
         }
     }
 
     pub fn get_category_icon(category: &str) -> &'static str {
         match category {
-            "Layouts" => "📐",
-            "Inputs" => "🎛",
-            "Display" => "🖥",
-            _ => "📦",
+            "Layouts" => "L",
+            "Inputs" => "I",
+            "Display" => "D",
+            _ => "?",
         }
     }
 }
@@ -218,17 +218,17 @@ pub fn section_frame(ctx: &egui::Context) -> egui::Frame {
         AetherColors::SECTION_BG
     };
     let stroke_color = if is_light {
-        Color32::from_rgb(220, 220, 225)
+        Color32::from_rgb(200, 200, 210)
     } else {
-        Color32::from_rgb(60, 60, 70)
+        Color32::from_rgb(70, 70, 80)
     };
 
     egui::Frame::new()
         .fill(bg_color)
-        .inner_margin(egui::Margin::same(10))
-        .outer_margin(egui::Margin::symmetric(0, 4))
-        .corner_radius(CornerRadius::same(6))
-        .stroke(Stroke::new(1.0, stroke_color))
+        .inner_margin(egui::Margin::same(12))
+        .outer_margin(egui::Margin::symmetric(0, 6))
+        .corner_radius(CornerRadius::same(8))
+        .stroke(Stroke::new(1.5, stroke_color))
 }
 
 /// Create a panel header frame (theme-aware)

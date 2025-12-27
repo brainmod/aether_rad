@@ -31,16 +31,16 @@ impl<'a> TabViewer for AetherTabViewer<'a> {
     type Tab = AetherTab;
 
     fn title(&mut self, tab: &mut Self::Tab) -> WidgetText {
-        let (icon, name) = match tab {
-            AetherTab::Canvas => ("🎨", "Canvas"),
-            AetherTab::Palette => ("🧰", "Palette"),
-            AetherTab::Hierarchy => ("🌳", "Hierarchy"),
-            AetherTab::Inspector => ("🔧", "Inspector"),
-            AetherTab::Output => ("📤", "Output"),
-            AetherTab::Variables => ("📊", "Variables"),
-            AetherTab::CodePreview => ("📝", "Code"),
+        let icon = match tab {
+            AetherTab::Canvas => "■",
+            AetherTab::Palette => "P",
+            AetherTab::Hierarchy => "T",
+            AetherTab::Inspector => "I",
+            AetherTab::Output => "O",
+            AetherTab::Variables => "V",
+            AetherTab::CodePreview => "C",
         };
-        format!("{} {}", icon, name).into()
+        format!("[{}]", icon).into()
     }
 
     fn ui(&mut self, ui: &mut Ui, tab: &mut Self::Tab) {
@@ -78,7 +78,7 @@ impl<'a> AetherTabViewer<'a> {
                 // Canvas header
                 ui.horizontal(|ui| {
                     ui.label(
-                        RichText::new("📐 Design Canvas")
+                        RichText::new("■ Design Canvas")
                             .size(12.0)
                             .color(muted_color),
                     );
@@ -316,7 +316,7 @@ impl<'a> AetherTabViewer<'a> {
                         // Delete button with warning color
                         if ui
                             .add(egui::Button::new(
-                                RichText::new("🗑 Delete Widget").color(theme::error_color(ui.ctx())),
+                                RichText::new("✕ Delete Widget").color(theme::error_color(ui.ctx())),
                             ))
                             .clicked()
                         {
@@ -337,7 +337,7 @@ impl<'a> AetherTabViewer<'a> {
         theme::section_frame(ui.ctx()).show(ui, |ui| {
             ui.vertical_centered(|ui| {
                 ui.add_space(20.0);
-                ui.label(RichText::new("👆").size(32.0));
+                ui.label(RichText::new("↓").size(32.0));
                 ui.add_space(8.0);
                 ui.label(RichText::new("Select a widget").color(theme::muted_color(ui.ctx())));
                 ui.label(
@@ -400,7 +400,7 @@ impl<'a> AetherTabViewer<'a> {
                 .add_enabled(
                     !is_checking,
                     egui::Button::new(
-                        RichText::new("🔧 Check Code").color(theme::accent_light_color(ui.ctx())),
+                        RichText::new("✓ Check Code").color(theme::accent_light_color(ui.ctx())),
                     ),
                 )
                 .clicked()
@@ -449,7 +449,7 @@ impl<'a> AetherTabViewer<'a> {
             ui.horizontal(|ui| {
                 if ui
                     .add(egui::Button::new(
-                        RichText::new("📁 Export Project").color(theme::accent_light_color(ui.ctx())),
+                        RichText::new("⬇ Export Project").color(theme::accent_light_color(ui.ctx())),
                     ))
                     .clicked()
                 {
@@ -557,7 +557,7 @@ impl<'a> AetherTabViewer<'a> {
                                     if ui
                                         .add(
                                             egui::Button::new(
-                                                RichText::new("🗑").color(theme::error_color(ui.ctx())),
+                                                RichText::new("✕").color(theme::error_color(ui.ctx())),
                                             )
                                             .small(),
                                         )
