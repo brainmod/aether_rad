@@ -56,7 +56,14 @@ impl<'a> AetherTabViewer<'a> {
         ui.label("Drafting Board");
         ui.separator();
 
-        let widgets = vec!["Button", "Vertical Layout"];
+        let widgets = vec![
+            "Button",
+            "Label",
+            "Text Edit",
+            "Checkbox",
+            "Slider",
+            "Vertical Layout",
+        ];
 
         for widget_type in widgets {
             let id = egui::Id::new("palette").with(widget_type);

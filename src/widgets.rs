@@ -70,6 +70,10 @@ impl WidgetNode for VerticalLayout {
             if ui.input(|i| i.pointer.any_released()) {
                 let new_widget: Box<dyn WidgetNode> = match payload.as_str() {
                     "Button" => Box::new(ButtonWidget::default()),
+                    "Label" => Box::new(LabelWidget::default()),
+                    "Text Edit" => Box::new(TextEditWidget::default()),
+                    "Checkbox" => Box::new(CheckboxWidget::default()),
+                    "Slider" => Box::new(SliderWidget::default()),
                     "Vertical Layout" => Box::new(VerticalLayout::default()),
                     _ => return,
                 };
@@ -233,6 +237,392 @@ impl WidgetNode for ButtonWidget {
         quote! {
             if ui.button(#label_tokens).clicked() {
                 // Logic would be injected here
+            }
+        }
+    }
+}
+
+// ===================== NEW WIDGETS =====================
+
+// --- Label ---
+#[derive(Debug, Serialize, Deserialize)]
+pub struct LabelWidget {
+    pub id: Uuid,
+    pub text: String,
+    #[serde(default)]
+    pub bindings: std::collections::HashMap<String, String>,
+}
+
+impl Default for LabelWidget {
+    fn default() -> Self {
+        Self {
+            id: Uuid::new_v4(),
+            text: "Label".to_string(),
+            bindings: std::collections::HashMap::new(),
+        }
+    }
+}
+
+#[typetag::serde]
+impl WidgetNode for LabelWidget {
+    fn id(&self) -> Uuid {
+        self.id
+    }
+    fn name(&self) -> &str {
+        "Label"
+    }
+
+    fn render_editor(&mut self, ui: &mut Ui, selection: &mut HashSet<Uuid>) {
+        let response = ui.label(&self.text);
+        let response = response.interact(egui::Sense::click()); // Labels aren't clickable by default
+
+        if response.clicked() {
+            selection.clear();
+            selection.insert(self.id);
+        }
+        if selection.contains(&self.id) {
+            ui.painter().rect_stroke(
+                response.rect,
+                0.0,
+                egui::Stroke::new(2.0, egui::Color32::from_rgb(255, 165, 0)),
+                egui::StrokeKind::Outside,
+            );
+        }
+    }
+
+    fn inspect(&mut self, ui: &mut Ui, known_variables: &[String]) {
+        ui.heading("Label Properties");
+        ui.horizontal(|ui| {
+            ui.label("Text:");
+            // Simplified binding logic for prototype
+            let is_bound = self.bindings.contains_key("text");
+            let mut bound_mode = is_bound;
+            if ui.checkbox(&mut bound_mode, "Bind").changed() {
+                if bound_mode {
+                    let first = known_variables.first().cloned().unwrap_or_default();
+                    self.bindings.insert("text".to_string(), first);
+                } else {
+                    self.bindings.remove("text");
+                }
+            }
+            if bound_mode {
+                let current = self.bindings.get("text").cloned().unwrap_or_default();
+                let mut selected = current.clone();
+                egui::ComboBox::from_id_salt("lbl_bind")
+                    .selected_text(&selected)
+                    .show_ui(ui, |ui| {
+                        for v in known_variables {
+                            ui.selectable_value(&mut selected, v.clone(), v);
+                        }
+                    });
+                if selected != current {
+                    self.bindings.insert("text".to_string(), selected);
+                }
+            } else {
+                ui.text_edit_singleline(&mut self.text);
+            }
+        });
+    }
+
+    fn codegen(&self) -> proc_macro2::TokenStream {
+        let content = if let Some(var) = self.bindings.get("text") {
+            let ident = quote::format_ident!("{}", var);
+            quote! { &self.#ident }
+        } else {
+            let t = &self.text;
+            quote! { #t }
+        };
+        quote! { ui.label(#content); }
+    }
+}
+
+// --- TextEdit ---
+#[derive(Debug, Serialize, Deserialize)]
+pub struct TextEditWidget {
+    pub id: Uuid,
+    pub text: String, // Fallback if not bound
+    #[serde(default)]
+    pub bindings: std::collections::HashMap<String, String>,
+}
+
+impl Default for TextEditWidget {
+    fn default() -> Self {
+        Self {
+            id: Uuid::new_v4(),
+            text: "".to_string(),
+            bindings: std::collections::HashMap::new(),
+        }
+    }
+}
+
+#[typetag::serde]
+impl WidgetNode for TextEditWidget {
+    fn id(&self) -> Uuid {
+        self.id
+    }
+    fn name(&self) -> &str {
+        "Text Edit"
+    }
+
+    fn render_editor(&mut self, ui: &mut Ui, selection: &mut HashSet<Uuid>) {
+        let response = ui.text_edit_singleline(&mut self.text); // In editor, it's just local state
+                                                                // TextEdit captures click, so we might need a frame or sense logic.
+                                                                // For now, assume clicking it selects it.
+        if response.clicked() || response.has_focus() {
+            if !selection.contains(&self.id) {
+                selection.clear();
+                selection.insert(self.id);
+            }
+        }
+        if selection.contains(&self.id) {
+            ui.painter().rect_stroke(
+                response.rect,
+                0.0,
+                egui::Stroke::new(2.0, egui::Color32::from_rgb(255, 165, 0)),
+                egui::StrokeKind::Outside,
+            );
+        }
+    }
+
+    fn inspect(&mut self, ui: &mut Ui, known_variables: &[String]) {
+        ui.heading("Text Edit Properties");
+        ui.label("Note: Binds to String variables.");
+        ui.horizontal(|ui| {
+            ui.label("Bind Value:");
+            let is_bound = self.bindings.contains_key("value");
+            let mut bound_mode = is_bound;
+            if ui.checkbox(&mut bound_mode, "Bind").changed() {
+                if bound_mode {
+                    let first = known_variables.first().cloned().unwrap_or_default();
+                    self.bindings.insert("value".to_string(), first);
+                } else {
+                    self.bindings.remove("value");
+                }
+            }
+            if bound_mode {
+                let current = self.bindings.get("value").cloned().unwrap_or_default();
+                let mut selected = current.clone();
+                egui::ComboBox::from_id_salt("txt_bind")
+                    .selected_text(&selected)
+                    .show_ui(ui, |ui| {
+                        for v in known_variables {
+                            ui.selectable_value(&mut selected, v.clone(), v);
+                        }
+                    });
+                if selected != current {
+                    self.bindings.insert("value".to_string(), selected);
+                }
+            }
+        });
+    }
+
+    fn codegen(&self) -> proc_macro2::TokenStream {
+        if let Some(var) = self.bindings.get("value") {
+            let ident = quote::format_ident!("{}", var);
+            quote! { ui.text_edit_singleline(&mut self.#ident); }
+        } else {
+            // If not bound, it's just a placeholder or needs local state we don't track well in codegen yet
+            quote! { ui.label("Unbound TextEdit"); }
+        }
+    }
+}
+
+// --- Checkbox ---
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CheckboxWidget {
+    pub id: Uuid,
+    pub label: String,
+    pub checked: bool,
+    #[serde(default)]
+    pub bindings: std::collections::HashMap<String, String>,
+}
+
+impl Default for CheckboxWidget {
+    fn default() -> Self {
+        Self {
+            id: Uuid::new_v4(),
+            label: "Check me".to_string(),
+            checked: false,
+            bindings: std::collections::HashMap::new(),
+        }
+    }
+}
+
+#[typetag::serde]
+impl WidgetNode for CheckboxWidget {
+    fn id(&self) -> Uuid {
+        self.id
+    }
+    fn name(&self) -> &str {
+        "Checkbox"
+    }
+
+    fn render_editor(&mut self, ui: &mut Ui, selection: &mut HashSet<Uuid>) {
+        let response = ui.checkbox(&mut self.checked, &self.label);
+        if response.clicked() {
+            selection.clear();
+            selection.insert(self.id);
+        }
+        if selection.contains(&self.id) {
+            ui.painter().rect_stroke(
+                response.rect,
+                0.0,
+                egui::Stroke::new(2.0, egui::Color32::from_rgb(255, 165, 0)),
+                egui::StrokeKind::Outside,
+            );
+        }
+    }
+
+    fn inspect(&mut self, ui: &mut Ui, known_variables: &[String]) {
+        ui.heading("Checkbox Properties");
+        ui.horizontal(|ui| {
+            ui.label("Label:");
+            ui.text_edit_singleline(&mut self.label);
+        });
+        ui.horizontal(|ui| {
+            ui.label("Bind Checked (Bool):");
+            let is_bound = self.bindings.contains_key("checked");
+            let mut bound_mode = is_bound;
+            if ui.checkbox(&mut bound_mode, "Bind").changed() {
+                if bound_mode {
+                    let first = known_variables.first().cloned().unwrap_or_default();
+                    self.bindings.insert("checked".to_string(), first);
+                } else {
+                    self.bindings.remove("checked");
+                }
+            }
+            if bound_mode {
+                let current = self.bindings.get("checked").cloned().unwrap_or_default();
+                let mut selected = current.clone();
+                egui::ComboBox::from_id_salt("chk_bind")
+                    .selected_text(&selected)
+                    .show_ui(ui, |ui| {
+                        for v in known_variables {
+                            ui.selectable_value(&mut selected, v.clone(), v);
+                        }
+                    });
+                if selected != current {
+                    self.bindings.insert("checked".to_string(), selected);
+                }
+            }
+        });
+    }
+
+    fn codegen(&self) -> proc_macro2::TokenStream {
+        let label = &self.label;
+        if let Some(var) = self.bindings.get("checked") {
+            let ident = quote::format_ident!("{}", var);
+            quote! { ui.checkbox(&mut self.#ident, #label); }
+        } else {
+            let val = self.checked;
+            quote! {
+                let mut temp = #val;
+                ui.checkbox(&mut temp, #label);
+            }
+        }
+    }
+}
+
+// --- Slider ---
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SliderWidget {
+    pub id: Uuid,
+    pub min: f64,
+    pub max: f64,
+    pub value: f64,
+    #[serde(default)]
+    pub bindings: std::collections::HashMap<String, String>,
+}
+
+impl Default for SliderWidget {
+    fn default() -> Self {
+        Self {
+            id: Uuid::new_v4(),
+            min: 0.0,
+            max: 100.0,
+            value: 50.0,
+            bindings: std::collections::HashMap::new(),
+        }
+    }
+}
+
+#[typetag::serde]
+impl WidgetNode for SliderWidget {
+    fn id(&self) -> Uuid {
+        self.id
+    }
+    fn name(&self) -> &str {
+        "Slider"
+    }
+
+    fn render_editor(&mut self, ui: &mut Ui, selection: &mut HashSet<Uuid>) {
+        let response = ui.add(egui::Slider::new(&mut self.value, self.min..=self.max));
+        if response.clicked() || response.dragged() {
+            // Sliders are dragged
+            if !selection.contains(&self.id) {
+                selection.clear();
+                selection.insert(self.id);
+            }
+        }
+        if selection.contains(&self.id) {
+            ui.painter().rect_stroke(
+                response.rect,
+                0.0,
+                egui::Stroke::new(2.0, egui::Color32::from_rgb(255, 165, 0)),
+                egui::StrokeKind::Outside,
+            );
+        }
+    }
+
+    fn inspect(&mut self, ui: &mut Ui, known_variables: &[String]) {
+        ui.heading("Slider Properties");
+        ui.horizontal(|ui| {
+            ui.label("Min:");
+            ui.add(egui::DragValue::new(&mut self.min));
+            ui.label("Max:");
+            ui.add(egui::DragValue::new(&mut self.max));
+        });
+        ui.horizontal(|ui| {
+            ui.label("Bind Value (Num):");
+            let is_bound = self.bindings.contains_key("value");
+            let mut bound_mode = is_bound;
+            if ui.checkbox(&mut bound_mode, "Bind").changed() {
+                if bound_mode {
+                    let first = known_variables.first().cloned().unwrap_or_default();
+                    self.bindings.insert("value".to_string(), first);
+                } else {
+                    self.bindings.remove("value");
+                }
+            }
+            if bound_mode {
+                let current = self.bindings.get("value").cloned().unwrap_or_default();
+                let mut selected = current.clone();
+                egui::ComboBox::from_id_salt("sld_bind")
+                    .selected_text(&selected)
+                    .show_ui(ui, |ui| {
+                        for v in known_variables {
+                            ui.selectable_value(&mut selected, v.clone(), v);
+                        }
+                    });
+                if selected != current {
+                    self.bindings.insert("value".to_string(), selected);
+                }
+            }
+        });
+    }
+
+    fn codegen(&self) -> proc_macro2::TokenStream {
+        let min = self.min;
+        let max = self.max;
+        if let Some(var) = self.bindings.get("value") {
+            let ident = quote::format_ident!("{}", var);
+            // We assume the variable is numeric. In a real compiler we'd cast.
+            quote! { ui.add(egui::Slider::new(&mut self.#ident, #min..=#max)); }
+        } else {
+            let val = self.value;
+            quote! {
+                let mut temp = #val;
+                ui.add(egui::Slider::new(&mut temp, #min..=#max));
             }
         }
     }

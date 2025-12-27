@@ -1,87 +1,80 @@
 # Project Aether: Development Status & Roadmap
 
-**Based on Architectural Blueprint:** "Egui Forge" **Current Phase:** Transitioning from Phase 2 (Shell) to Phase 3 (Interactive Canvas).
+**Based on Architectural Blueprint:** "Egui Forge"
+**Current Phase:** ✅ Version 1.0 Prototype Complete (Phases 1-5 finished).
 
 ## 1. Executive Summary
 
-Aether is a native Rust Rapid Application Development (RAD) utility. It bridges the gap between **Immediate Mode** rendering (egui) and **Retained Mode** editing (Qt Designer style) using a **Shadow Object Model (SOM)** .
+Aether is a native Rust Rapid Application Development (RAD) utility. It bridges the gap between **Immediate Mode** rendering (egui) and **Retained Mode** editing (Qt Designer style) using a **Shadow Object Model (SOM)**.
 
-We have successfully implemented the **Kernel** (serialization/data model) and the **Shell** (docking workspace), proving that the core architectural risks (polymorphism and state persistence) are resolved.
+We have successfully implemented the full prototype, enabling users to visually design a UI, define state variables, bind properties, and generate valid Rust code.
 
 ## 2. Architectural Pillars
 
 ### The Shadow Object Model (SOM)
 
-- **Concept:** A persistent data structure representing the UI state, distinct from the ephemeral frame rendering .
-- **Implementation:** The `ProjectState` struct holds a root `Box<dyn WidgetNode>`.
-- **Polymorphism:** Solved using `typetag` to serialize dynamic trait objects without rigid Enums .
+- **Concept:** A persistent data structure representing the UI state, distinct from the ephemeral frame rendering.
+- **Implementation:** The `ProjectState` struct holds a root `Box<dyn WidgetNode>` and a `HashMap<String, Variable>`.
+- **Polymorphism:** Solved using `typetag` to serialize dynamic trait objects.
 
 ### The "Edit Mode" Rendering
 
-- **Concept:** Widgets render themselves. In the editor, they are wrapped in interaction logic (Gizmos) rather than executing their runtime behavior .
-- **Status:** Basic rendering is active. Interaction interception is the next major milestone.
+- **Concept:** Widgets render themselves. In the editor, they are wrapped in interaction logic (Gizmos, Drag & Drop).
+- **Status:** Active. Widgets support visual editing, selection outlines, and property binding.
 
 ## 3. Progress Log
 
 ### ✅ Phase 1: The Kernel (Completed)
 
-- [x] **WidgetNode Trait:** Defined with `render_editor`, `inspect`, and `codegen` capabilities .
-- [x] **Serialization Engine:** Integrated `serde` + `typetag`. Verified JSON output for polymorphic types (`ButtonWidget`) .
-- [x] **Recursion:** Implemented `VerticalLayout` to prove the SOM can handle nested trees .
-- [x] **Project State:** Created the root container for the application definition .
+- [x] **WidgetNode Trait:** Defined with `render_editor`, `inspect`, and `codegen`.
+- [x] **Serialization Engine:** Integrated `serde` + `typetag`.
+- [x] **Project State:** Root container for application definition.
 
 ### ✅ Phase 2: The Shell (Completed)
 
-- [x] **Workspace Layout:** Integrated `egui_dock` to support resizable, tabbed panels .
-- [x] **Panel Architecture:** Implemented `AetherTabViewer` with context injection (`ProjectState`) .
-- [x] **The Feedback Loop:** Connecting the **Inspector** directly to the **Canvas**. Changes in property fields update the render immediately .
+- [x] **Workspace Layout:** Integrated `egui_dock` (v0.18) for resizable panels.
+- [x] **Panel Architecture:** `AetherTabViewer` with Context Injection.
+- [x] **The Feedback Loop:** Connecting Inspector to Canvas.
 
-## 4. Upcoming Roadmap
+### ✅ Phase 3: The Interactive Canvas (Completed)
 
-### 🚧 Phase 3: The Interactive Canvas (Current Focus)
+- [x] **Hierarchy Tree Walker:** Recursive visual tree in the "Hierarchy" panel.
+- [x] **Selection System:** `HashSet<Uuid>` based selection.
+- [x] **Gizmos:** Selection outlines (`StrokeKind::Outside`).
+- [x] **Drag & Drop:** `dnd_drag_source` (Palette) -> `dnd_drop_zone` (Containers).
 
-**Goal:** Distinguish between *interacting with the editor* and *interacting with the widget*.
+### ✅ Phase 4: Logic & Data Binding (Completed)
 
-- **Task 3.1: Hierarchy Tree Walker:** Improve the visual tree in the "Hierarchy" panel to properly visualize recursion.
-- **Task 3.2: Selection System:** Implement a Global Selection set (`HashSet<Uuid>`). Clicking a widget in Canvas or Hierarchy selects it .
-- **Task 3.3: Gizmos:** Draw selection outlines over the active widget in the Canvas .
-- **Task 3.4: Drag & Drop:** Implement `egui_dnd` to drag widgets from Palette -> Canvas and reorder them .
+- [x] **Variable Store:** `Variable` struct (String, Integer, Float, Boolean).
+- [x] **Variables Panel:** UI for adding/removing/editing state variables.
+- [x] **Data Binding:** Inspector allows binding properties (e.g., Button Text) to variables.
 
-### 📅 Phase 4: Logic & Data Binding
+### ✅ Phase 5: The Compiler (Completed)
 
-**Goal:** Allow users to define app behavior, not just visuals.
+- [x] **Codegen Strategy:** `quote!` macros generating ASTs.
+- [x] **Scaffolding:** Generators for `Cargo.toml`, `main.rs`, and `app.rs`.
+- [x] **Binding Support:** Generated code references variables (`self.var_name`) instead of literals.
+- [x] **UI Integration:** "Generate Code" button in Output panel (stdout preview).
 
-- **Variable Store:** Define the virtual `struct MyApp` state .
-- **Data Binding:** Allow properties to bind to variables (e.g., Slider binds to `self.value`) .
-- **Event System:** Add "Signals" (e.g., `On Click`) that trigger actions or code snippets .
+## 4. Future Roadmap (Post-V1)
 
-### 📅 Phase 5: The Compiler
+### 💾 Persistence & I/O
+- **Save/Load:** Implement File Dialogs to save `ProjectState` to JSON files.
+- **Real Compilation:** Write generated code to a temporary Cargo project and run `cargo build`.
 
-**Goal:** Generate standalone Rust code.
+### 🛠 Widget Expansion
+- **Text Inputs:** Add `Label` and `LineEdit` widgets.
+- **Layouts:** Add `HorizontalLayout` and `Grid`.
 
-- **Codegen:** Utilize `quote` crate to synthesize ASTs from the SOM .
-- **Scaffolding:** Generate `Cargo.toml`, `main.rs`, and `app.rs` .
+### ⚡ UX Refinement
+- **Reordering:** Support Drag & Drop *within* the Hierarchy/Canvas to reorder children.
+- **Undo/Redo:** Implement command history for `ProjectState`.
 
 ## 5. Technical Reference
 
 ### Key Files
-
-- `src/model.rs`: Defines `WidgetNode` (Trait) and `ProjectState` (Root). **(The SOM)**
-- `src/widgets.rs`: Concrete implementations (`ButtonWidget`, `VerticalLayout`). **(The Standard Lib)**
-- `src/ui.rs`: Layout definitions for `egui_dock` and panel rendering logic. **(The View)**
-- `src/app.rs`: Main application state holding `DockState` and `ProjectState`.
-
-### Adding a New Widget
-
-To add a new widget (e.g., `Label`):
-
-1. Define `struct LabelWidget` in `widgets.rs`.
-2. Implement `Default`.
-3. Implement `WidgetNode` with `#[typetag::serde]`.
-4. Implement `render_editor` (draw the label).
-5. Implement `inspect` (draw text input for content).
-6. Implement `codegen` (return `ui.label(...)` tokens).
-
-------
-
-*Document generated based on "Egui Forge" Architectural Analysis .*
+- `src/model.rs`: SOM, `WidgetNode`, `ProjectState`, `Variable`.
+- `src/widgets.rs`: Concrete widgets (`ButtonWidget`, `VerticalLayout`) & Codegen logic.
+- `src/ui.rs`: Docking layout (`AetherTabViewer`) and panel rendering.
+- `src/compiler.rs`: Code generation logic.
+- `src/app.rs`: Main runtime loop.
