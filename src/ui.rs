@@ -14,6 +14,7 @@ pub enum AetherTab {
     Inspector,
     Output,
     Variables,
+    CodePreview,
 }
 
 // The "Viewer" handles the actual rendering of each tab.
@@ -37,6 +38,7 @@ impl<'a> TabViewer for AetherTabViewer<'a> {
             AetherTab::Inspector => self.render_inspector(ui),
             AetherTab::Output => self.render_output(ui),
             AetherTab::Variables => self.render_variables(ui),
+            AetherTab::CodePreview => self.render_code_preview(ui),
         }
     }
 }
@@ -62,6 +64,7 @@ impl<'a> AetherTabViewer<'a> {
             "Text Edit",
             "Checkbox",
             "Slider",
+            "Progress Bar",
             "Vertical Layout",
             "Horizontal Layout",
         ];
@@ -69,7 +72,7 @@ impl<'a> AetherTabViewer<'a> {
         for widget_type in widgets {
             let id = egui::Id::new("palette").with(widget_type);
             ui.dnd_drag_source(id, widget_type.to_string(), |ui| {
-                ui.button(widget_type);
+                let _ = ui.button(widget_type);
             });
         }
     }
@@ -89,6 +92,17 @@ impl<'a> AetherTabViewer<'a> {
             if let Some(node) = self.project_state.find_node_mut(id) {
                 node.inspect(ui, &known_vars);
 
+                ui.separator();
+
+                // Add Delete button
+                ui.horizontal(|ui| {
+                    if ui.button("🗑 Delete Widget").clicked() {
+                        if self.project_state.delete_widget(id) {
+                            self.project_state.selection.clear();
+                        }
+                    }
+                });
+
                 return;
             }
         }
@@ -100,19 +114,55 @@ impl<'a> AetherTabViewer<'a> {
         ui.heading("Compilation Output");
         ui.separator();
 
-        if ui.button("Generate Code").clicked() {
-            // In a real app, we would write these to disk or show tabs for each file.
-            // For this prototype, we'll dump app.rs to the console/log area.
+        if ui.button("Generate Code (stdout)").clicked() {
+            // Print to stdout for quick debugging
             let code = Compiler::generate_app_rs(&self.project_state);
-            // We can't easily store the string in 'self' here without adding a field to TabViewer
-            // or ProjectState (which shouldn't hold UI state).
-            // For now, let's just print to stdout for debugging and show a "Done" label.
             println!("--- Generated app.rs ---\n{}", code);
             println!("------------------------");
         }
 
-        ui.label("Check stdout for generated code (Prototype limitation).");
-        ui.code("Waiting for build...");
+        ui.separator();
+
+        if ui.button("📁 Export Project").clicked() {
+            // Pick a directory to export the project
+            if let Some(folder) = rfd::FileDialog::new().pick_folder() {
+                // Create src subdirectory
+                let src_dir = folder.join("src");
+                if let Err(e) = std::fs::create_dir_all(&src_dir) {
+                    eprintln!("Failed to create src directory: {}", e);
+                    return;
+                }
+
+                // Write Cargo.toml
+                let cargo_toml_path = folder.join("Cargo.toml");
+                let cargo_toml = Compiler::generate_cargo_toml("my_app");
+                if let Err(e) = std::fs::write(&cargo_toml_path, cargo_toml) {
+                    eprintln!("Failed to write Cargo.toml: {}", e);
+                    return;
+                }
+
+                // Write src/main.rs
+                let main_rs_path = src_dir.join("main.rs");
+                let main_rs = Compiler::generate_main_rs();
+                if let Err(e) = std::fs::write(&main_rs_path, main_rs) {
+                    eprintln!("Failed to write main.rs: {}", e);
+                    return;
+                }
+
+                // Write src/app.rs
+                let app_rs_path = src_dir.join("app.rs");
+                let app_rs = Compiler::generate_app_rs(&self.project_state);
+                if let Err(e) = std::fs::write(&app_rs_path, app_rs) {
+                    eprintln!("Failed to write app.rs: {}", e);
+                    return;
+                }
+
+                println!("✓ Project exported successfully to: {}", folder.display());
+            }
+        }
+
+        ui.separator();
+        ui.label("Export your project to build and run with cargo.");
     }
 
     fn render_variables(&mut self, ui: &mut Ui) {
@@ -194,6 +244,35 @@ impl<'a> AetherTabViewer<'a> {
             self.project_state.variables.remove(&key);
         }
     }
+
+    fn render_code_preview(&mut self, ui: &mut Ui) {
+        ui.heading("Code Preview");
+        ui.separator();
+
+        egui::ScrollArea::vertical().show(ui, |ui| {
+            ui.group(|ui| {
+                ui.label("Cargo.toml");
+                let cargo_toml = Compiler::generate_cargo_toml("my_app");
+                ui.code(&cargo_toml);
+            });
+
+            ui.add_space(10.0);
+
+            ui.group(|ui| {
+                ui.label("src/main.rs");
+                let main_rs = Compiler::generate_main_rs();
+                ui.code(&main_rs);
+            });
+
+            ui.add_space(10.0);
+
+            ui.group(|ui| {
+                ui.label("src/app.rs");
+                let app_rs = Compiler::generate_app_rs(&self.project_state);
+                ui.code(&app_rs);
+            });
+        });
+    }
 }
 
 fn draw_hierarchy_node(ui: &mut Ui, node: &dyn WidgetNode, selection: &mut HashSet<Uuid>) {
@@ -256,13 +335,13 @@ pub fn default_layout() -> egui_dock::DockState<AetherTab> {
     // 4. Split Left (Palette) to add Variables below it
     tree.split_below(_left, 0.6, vec![AetherTab::Variables]);
 
-    // 5. Split Bottom of Canvas (center) for Output
+    // 5. Split Bottom of Canvas (center) for Output and CodePreview (tabbed together)
     // We need to find the node containing the Canvas again since indices change.
     // For simplicity, we can just split the root's first child's second child...
     // Or easier: split the "right" node (which contains canvas) from step 1?
     // Actually, 'right' in step 1 was the center area.
     // But 'right' was split in step 2. The left part of that split is the new center (Canvas).
-    tree.split_below(_center, 0.8, vec![AetherTab::Output]);
+    tree.split_below(_center, 0.8, vec![AetherTab::Output, AetherTab::CodePreview]);
 
     dock_state
 }

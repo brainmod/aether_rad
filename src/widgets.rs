@@ -28,6 +28,14 @@ impl Default for VerticalLayout {
 
 #[typetag::serde]
 impl WidgetNode for VerticalLayout {
+    fn clone_box(&self) -> Box<dyn WidgetNode> {
+        Box::new(Self {
+            id: self.id,
+            children: self.children.iter().map(|c| c.clone_box()).collect(),
+            spacing: self.spacing,
+        })
+    }
+
     fn id(&self) -> Uuid {
         self.id
     }
@@ -74,6 +82,7 @@ impl WidgetNode for VerticalLayout {
                     "Text Edit" => Box::new(TextEditWidget::default()),
                     "Checkbox" => Box::new(CheckboxWidget::default()),
                     "Slider" => Box::new(SliderWidget::default()),
+                    "Progress Bar" => Box::new(ProgressBarWidget::default()),
                     "Vertical Layout" => Box::new(VerticalLayout::default()),
                     "Horizontal Layout" => Box::new(HorizontalLayout::default()),
                     _ => return,
@@ -138,6 +147,14 @@ impl Default for HorizontalLayout {
 
 #[typetag::serde]
 impl WidgetNode for HorizontalLayout {
+    fn clone_box(&self) -> Box<dyn WidgetNode> {
+        Box::new(Self {
+            id: self.id,
+            children: self.children.iter().map(|c| c.clone_box()).collect(),
+            spacing: self.spacing,
+        })
+    }
+
     fn id(&self) -> Uuid {
         self.id
     }
@@ -168,6 +185,7 @@ impl WidgetNode for HorizontalLayout {
                             "Text Edit" => Box::new(TextEditWidget::default()),
                             "Checkbox" => Box::new(CheckboxWidget::default()),
                             "Slider" => Box::new(SliderWidget::default()),
+                            "Progress Bar" => Box::new(ProgressBarWidget::default()),
                             "Vertical Layout" => Box::new(VerticalLayout::default()),
                             "Horizontal Layout" => Box::new(HorizontalLayout::default()),
                             _ => return,
@@ -217,7 +235,7 @@ impl WidgetNode for HorizontalLayout {
 }
 
 /// A concrete implementation of a Button.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ButtonWidget {
     pub id: Uuid,
     pub text: String,
@@ -241,6 +259,10 @@ impl Default for ButtonWidget {
 
 #[typetag::serde]
 impl WidgetNode for ButtonWidget {
+    fn clone_box(&self) -> Box<dyn WidgetNode> {
+        Box::new(self.clone())
+    }
+
     fn id(&self) -> Uuid {
         self.id
     }
@@ -344,7 +366,7 @@ impl WidgetNode for ButtonWidget {
 // ===================== NEW WIDGETS =====================
 
 // --- Label ---
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct LabelWidget {
     pub id: Uuid,
     pub text: String,
@@ -364,6 +386,10 @@ impl Default for LabelWidget {
 
 #[typetag::serde]
 impl WidgetNode for LabelWidget {
+    fn clone_box(&self) -> Box<dyn WidgetNode> {
+        Box::new(self.clone())
+    }
+
     fn id(&self) -> Uuid {
         self.id
     }
@@ -436,7 +462,7 @@ impl WidgetNode for LabelWidget {
 }
 
 // --- TextEdit ---
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct TextEditWidget {
     pub id: Uuid,
     pub text: String, // Fallback if not bound
@@ -456,6 +482,10 @@ impl Default for TextEditWidget {
 
 #[typetag::serde]
 impl WidgetNode for TextEditWidget {
+    fn clone_box(&self) -> Box<dyn WidgetNode> {
+        Box::new(self.clone())
+    }
+
     fn id(&self) -> Uuid {
         self.id
     }
@@ -527,7 +557,7 @@ impl WidgetNode for TextEditWidget {
 }
 
 // --- Checkbox ---
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct CheckboxWidget {
     pub id: Uuid,
     pub label: String,
@@ -549,6 +579,10 @@ impl Default for CheckboxWidget {
 
 #[typetag::serde]
 impl WidgetNode for CheckboxWidget {
+    fn clone_box(&self) -> Box<dyn WidgetNode> {
+        Box::new(self.clone())
+    }
+
     fn id(&self) -> Uuid {
         self.id
     }
@@ -623,7 +657,7 @@ impl WidgetNode for CheckboxWidget {
 }
 
 // --- Slider ---
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct SliderWidget {
     pub id: Uuid,
     pub min: f64,
@@ -647,6 +681,10 @@ impl Default for SliderWidget {
 
 #[typetag::serde]
 impl WidgetNode for SliderWidget {
+    fn clone_box(&self) -> Box<dyn WidgetNode> {
+        Box::new(self.clone())
+    }
+
     fn id(&self) -> Uuid {
         self.id
     }
@@ -724,6 +762,102 @@ impl WidgetNode for SliderWidget {
                 let mut temp = #val;
                 ui.add(egui::Slider::new(&mut temp, #min..=#max));
             }
+        }
+    }
+}
+
+// --- ProgressBar ---
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ProgressBarWidget {
+    pub id: Uuid,
+    pub value: f32, // 0.0 to 1.0
+    #[serde(default)]
+    pub bindings: std::collections::HashMap<String, String>,
+}
+
+impl Default for ProgressBarWidget {
+    fn default() -> Self {
+        Self {
+            id: Uuid::new_v4(),
+            value: 0.5,
+            bindings: std::collections::HashMap::new(),
+        }
+    }
+}
+
+#[typetag::serde]
+impl WidgetNode for ProgressBarWidget {
+    fn clone_box(&self) -> Box<dyn WidgetNode> {
+        Box::new(self.clone())
+    }
+
+    fn id(&self) -> Uuid {
+        self.id
+    }
+    fn name(&self) -> &str {
+        "Progress Bar"
+    }
+
+    fn render_editor(&mut self, ui: &mut Ui, selection: &mut HashSet<Uuid>) {
+        let response = ui.add(egui::ProgressBar::new(self.value).show_percentage());
+        let response = response.interact(egui::Sense::click());
+
+        if response.clicked() {
+            selection.clear();
+            selection.insert(self.id);
+        }
+        if selection.contains(&self.id) {
+            ui.painter().rect_stroke(
+                response.rect,
+                0.0,
+                egui::Stroke::new(2.0, egui::Color32::from_rgb(255, 165, 0)),
+                egui::StrokeKind::Outside,
+            );
+        }
+    }
+
+    fn inspect(&mut self, ui: &mut Ui, known_variables: &[String]) {
+        ui.heading("Progress Bar Properties");
+        ui.horizontal(|ui| {
+            ui.label("Progress (0.0 - 1.0):");
+            ui.add(egui::Slider::new(&mut self.value, 0.0..=1.0));
+        });
+        ui.horizontal(|ui| {
+            ui.label("Bind Value:");
+            let is_bound = self.bindings.contains_key("value");
+            let mut bound_mode = is_bound;
+            if ui.checkbox(&mut bound_mode, "Bind").changed() {
+                if bound_mode {
+                    let first = known_variables.first().cloned().unwrap_or_default();
+                    self.bindings.insert("value".to_string(), first);
+                } else {
+                    self.bindings.remove("value");
+                }
+            }
+            if bound_mode {
+                let current = self.bindings.get("value").cloned().unwrap_or_default();
+                let mut selected = current.clone();
+                egui::ComboBox::from_id_salt("progress_bind")
+                    .selected_text(&selected)
+                    .show_ui(ui, |ui| {
+                        for v in known_variables {
+                            ui.selectable_value(&mut selected, v.clone(), v);
+                        }
+                    });
+                if selected != current {
+                    self.bindings.insert("value".to_string(), selected);
+                }
+            }
+        });
+    }
+
+    fn codegen(&self) -> proc_macro2::TokenStream {
+        if let Some(var) = self.bindings.get("value") {
+            let ident = quote::format_ident!("{}", var);
+            quote! { ui.add(egui::ProgressBar::new(self.#ident).show_percentage()); }
+        } else {
+            let val = self.value;
+            quote! { ui.add(egui::ProgressBar::new(#val).show_percentage()); }
         }
     }
 }

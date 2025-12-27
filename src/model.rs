@@ -32,6 +32,8 @@ pub struct Variable {
 /// [cite: 47, 55]
 #[typetag::serde(tag = "type")]
 pub trait WidgetNode: std::fmt::Debug {
+    /// Clone this widget node into a boxed trait object
+    fn clone_box(&self) -> Box<dyn WidgetNode>;
     /// Distinct behavior 1: Editor Visualization
     /// How the widget renders itself inside the designer canvas.
     /// [cite: 50]
@@ -83,6 +85,16 @@ pub struct ProjectState {
     pub variables: HashMap<String, Variable>,
 }
 
+impl Clone for ProjectState {
+    fn clone(&self) -> Self {
+        Self {
+            root_node: self.root_node.clone_box(),
+            selection: self.selection.clone(),
+            variables: self.variables.clone(),
+        }
+    }
+}
+
 impl ProjectState {
     pub fn new(root: Box<dyn WidgetNode>) -> Self {
         Self {
@@ -102,6 +114,17 @@ impl ProjectState {
     pub fn find_node_mut(&mut self, id: Uuid) -> Option<&mut dyn WidgetNode> {
         find_node_recursive_mut(self.root_node.as_mut(), id)
     }
+
+    /// Delete a widget by its ID. Returns true if the widget was found and deleted.
+    /// Cannot delete the root node.
+    pub fn delete_widget(&mut self, id: Uuid) -> bool {
+        // Don't allow deleting the root node
+        if self.root_node.id() == id {
+            return false;
+        }
+
+        delete_node_recursive(self.root_node.as_mut(), id)
+    }
 }
 
 fn find_node_recursive_mut(node: &mut dyn WidgetNode, target: Uuid) -> Option<&mut dyn WidgetNode> {
@@ -116,6 +139,24 @@ fn find_node_recursive_mut(node: &mut dyn WidgetNode, target: Uuid) -> Option<&m
         }
     }
     None
+}
+
+fn delete_node_recursive(node: &mut dyn WidgetNode, target: Uuid) -> bool {
+    if let Some(children) = node.children_mut() {
+        // First, check if any direct child matches the target
+        if let Some(index) = children.iter().position(|c| c.id() == target) {
+            children.remove(index);
+            return true;
+        }
+
+        // If not found in direct children, recurse into each child
+        for child in children.iter_mut() {
+            if delete_node_recursive(child.as_mut(), target) {
+                return true;
+            }
+        }
+    }
+    false
 }
 
 #[cfg(test)]
