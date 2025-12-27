@@ -127,7 +127,7 @@ impl<'a> AetherTabViewer<'a> {
         ui.label(
             RichText::new("Drag widgets to the canvas")
                 .size(11.0)
-                .color(AetherColors::MUTED),
+                .color(theme::muted_color(ui.ctx())),
         );
         ui.add_space(8.0);
 
@@ -178,9 +178,9 @@ impl<'a> AetherTabViewer<'a> {
 
         // Keyboard navigation hint
         ui.label(
-            RichText::new("↑↓ Navigate • Esc Clear")
+            RichText::new("↑ ↓ Navigate • Esc Clear")
                 .size(10.0)
-                .color(AetherColors::MUTED),
+                .color(theme::muted_color(ui.ctx())),
         );
         ui.add_space(8.0);
 
@@ -316,7 +316,7 @@ impl<'a> AetherTabViewer<'a> {
                         // Delete button with warning color
                         if ui
                             .add(egui::Button::new(
-                                RichText::new("🗑 Delete Widget").color(AetherColors::ERROR),
+                                RichText::new("🗑 Delete Widget").color(theme::error_color(ui.ctx())),
                             ))
                             .clicked()
                         {
@@ -339,11 +339,11 @@ impl<'a> AetherTabViewer<'a> {
                 ui.add_space(20.0);
                 ui.label(RichText::new("👆").size(32.0));
                 ui.add_space(8.0);
-                ui.label(RichText::new("Select a widget").color(AetherColors::MUTED));
+                ui.label(RichText::new("Select a widget").color(theme::muted_color(ui.ctx())));
                 ui.label(
                     RichText::new("to view its properties")
                         .size(11.0)
-                        .color(AetherColors::MUTED),
+                        .color(theme::muted_color(ui.ctx())),
                 );
                 ui.add_space(20.0);
             });
@@ -400,7 +400,7 @@ impl<'a> AetherTabViewer<'a> {
                 .add_enabled(
                     !is_checking,
                     egui::Button::new(
-                        RichText::new("🔧 Check Code").color(AetherColors::ACCENT_LIGHT),
+                        RichText::new("🔧 Check Code").color(theme::accent_light_color(ui.ctx())),
                     ),
                 )
                 .clicked()
@@ -428,11 +428,11 @@ impl<'a> AetherTabViewer<'a> {
 
                 let status_text = self.validation_status.display_text();
                 let status_color = if self.validation_status.is_success() {
-                    AetherColors::SUCCESS
+                    theme::success_color(ui.ctx())
                 } else if matches!(self.validation_status, ValidationStatus::Failed(_)) {
-                    Color32::from_rgb(255, 100, 100)
+                    theme::error_color(ui.ctx())
                 } else {
-                    AetherColors::MUTED
+                    theme::muted_color(ui.ctx())
                 };
 
                 ui.label(RichText::new(status_text).size(11.0).color(status_color));
@@ -449,7 +449,7 @@ impl<'a> AetherTabViewer<'a> {
             ui.horizontal(|ui| {
                 if ui
                     .add(egui::Button::new(
-                        RichText::new("📁 Export Project").color(AetherColors::ACCENT_LIGHT),
+                        RichText::new("📁 Export Project").color(theme::accent_light_color(ui.ctx())),
                     ))
                     .clicked()
                 {
@@ -503,7 +503,7 @@ impl<'a> AetherTabViewer<'a> {
             ui.label(
                 RichText::new("Export creates a complete Cargo project")
                     .size(11.0)
-                    .color(AetherColors::MUTED),
+                    .color(theme::muted_color(ui.ctx())),
             );
         });
     }
@@ -515,14 +515,14 @@ impl<'a> AetherTabViewer<'a> {
         ui.label(
             RichText::new("Define app state for bindings")
                 .size(11.0)
-                .color(AetherColors::MUTED),
+                .color(theme::muted_color(ui.ctx())),
         );
         ui.add_space(8.0);
 
         // Add variable button
         if ui
             .add(egui::Button::new(
-                RichText::new("+ Add Variable").color(AetherColors::SUCCESS),
+                RichText::new("+ Add Variable").color(theme::success_color(ui.ctx())),
             ))
             .clicked()
         {
@@ -557,7 +557,7 @@ impl<'a> AetherTabViewer<'a> {
                                     if ui
                                         .add(
                                             egui::Button::new(
-                                                RichText::new("🗑").color(AetherColors::ERROR),
+                                                RichText::new("🗑").color(theme::error_color(ui.ctx())),
                                             )
                                             .small(),
                                         )
@@ -572,7 +572,7 @@ impl<'a> AetherTabViewer<'a> {
                         ui.add_space(4.0);
 
                         ui.horizontal(|ui| {
-                            ui.label(RichText::new("Type:").size(11.0).color(AetherColors::MUTED));
+                            ui.label(RichText::new("Type:").size(11.0).color(theme::muted_color(ui.ctx())));
                             egui::ComboBox::from_id_salt(format!("type_{}", key))
                                 .selected_text(format!("{}", var.v_type))
                                 .width(80.0)
@@ -602,7 +602,7 @@ impl<'a> AetherTabViewer<'a> {
                             ui.label(
                                 RichText::new("Value:")
                                     .size(11.0)
-                                    .color(AetherColors::MUTED),
+                                    .color(theme::muted_color(ui.ctx())),
                             );
                             ui.add(egui::TextEdit::singleline(&mut var.value).desired_width(80.0));
                         });
@@ -624,7 +624,7 @@ impl<'a> AetherTabViewer<'a> {
         ui.label(
             RichText::new("Live preview of output")
                 .size(11.0)
-                .color(AetherColors::MUTED),
+                .color(theme::muted_color(ui.ctx())),
         );
         ui.add_space(8.0);
 
@@ -695,13 +695,13 @@ fn render_code_section(ui: &mut Ui, title: &str, code: &str) {
                 RichText::new(title)
                     .size(12.0)
                     .strong()
-                    .color(AetherColors::ACCENT_LIGHT),
+                    .color(theme::accent_light_color(ui.ctx())),
             );
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 ui.label(
                     RichText::new(format!("{} lines", code.lines().count()))
                         .size(10.0)
-                        .color(AetherColors::MUTED),
+                        .color(theme::muted_color(ui.ctx())),
                 );
             });
         });

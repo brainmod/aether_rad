@@ -304,3 +304,39 @@ pub fn widget_category_color(widget_name: &str) -> Color32 {
         _ => AetherColors::MUTED,
     }
 }
+
+/// Get the muted text color based on current theme
+pub fn muted_color(ctx: &egui::Context) -> Color32 {
+    if ctx.style().visuals.dark_mode {
+        AetherColors::MUTED
+    } else {
+        LightModeColors::MUTED
+    }
+}
+
+/// Get the accent light color based on current theme
+pub fn accent_light_color(ctx: &egui::Context) -> Color32 {
+    if ctx.style().visuals.dark_mode {
+        AetherColors::ACCENT_LIGHT
+    } else {
+        LightModeColors::ACCENT_LIGHT
+    }
+}
+
+/// Get the error color based on current theme
+pub fn error_color(ctx: &egui::Context) -> Color32 {
+    if ctx.style().visuals.dark_mode {
+        AetherColors::ERROR
+    } else {
+        LightModeColors::ERROR
+    }
+}
+
+/// Get the success color based on current theme
+pub fn success_color(ctx: &egui::Context) -> Color32 {
+    if ctx.style().visuals.dark_mode {
+        AetherColors::SUCCESS
+    } else {
+        LightModeColors::SUCCESS
+    }
+}
