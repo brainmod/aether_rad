@@ -16,6 +16,7 @@ pub enum AetherTab {
     Inspector,
     Output,
     Variables,
+    Assets,
     CodePreview,
 }
 
@@ -40,6 +41,7 @@ impl<'a> TabViewer for AetherTabViewer<'a> {
             AetherTab::Inspector => "Inspector",
             AetherTab::Output => "Output",
             AetherTab::Variables => "Variables",
+            AetherTab::Assets => "Assets",
             AetherTab::CodePreview => "Code",
         };
         name.into()
@@ -53,6 +55,7 @@ impl<'a> TabViewer for AetherTabViewer<'a> {
             AetherTab::Inspector => self.render_inspector(ui),
             AetherTab::Output => self.render_output(ui),
             AetherTab::Variables => self.render_variables(ui),
+            AetherTab::Assets => self.render_assets(ui),
             AetherTab::CodePreview => self.render_code_preview(ui),
         }
     }
@@ -439,6 +442,37 @@ impl<'a> AetherTabViewer<'a> {
         });
         ui.add_space(8.0);
 
+        // New Project templates
+        theme::section_frame(ui.ctx()).show(ui, |ui| {
+            ui.label(theme::subheading("New Project"));
+            ui.add_space(6.0);
+
+            ui.label(
+                RichText::new("Create from template:")
+                    .size(11.0)
+                    .color(theme::muted_color(ui.ctx())),
+            );
+            ui.add_space(4.0);
+
+            if ui.button("Empty Project").clicked() {
+                *self.project_state = crate::model::ProjectState::empty();
+            }
+
+            if ui.button("Counter App").clicked() {
+                *self.project_state = crate::model::ProjectState::template_counter_app();
+            }
+
+            if ui.button("Contact Form").clicked() {
+                *self.project_state = crate::model::ProjectState::template_form();
+            }
+
+            if ui.button("Dashboard").clicked() {
+                *self.project_state = crate::model::ProjectState::template_dashboard();
+            }
+        });
+
+        ui.add_space(8.0);
+
         // Project settings
         theme::section_frame(ui.ctx()).show(ui, |ui| {
             ui.label(theme::subheading("Project Settings"));
@@ -680,6 +714,97 @@ impl<'a> AetherTabViewer<'a> {
 
         if let Some(key) = to_remove {
             self.project_state.variables.remove(&key);
+        }
+    }
+
+    fn render_assets(&mut self, ui: &mut Ui) {
+        ui.add_space(4.0);
+        ui.label(theme::heading("Project Assets"));
+        ui.add_space(4.0);
+        ui.label(
+            RichText::new("Manage images and other resources")
+                .size(11.0)
+                .color(theme::muted_color(ui.ctx())),
+        );
+        ui.add_space(8.0);
+
+        // Add asset button
+        if ui
+            .add(egui::Button::new(
+                RichText::new("+ Add Image").color(theme::success_color(ui.ctx())),
+            ))
+            .clicked()
+        {
+            // In a full implementation, this would open a file picker
+            // For now, we'll just show a placeholder
+            ui.label(
+                RichText::new("File picker would open here")
+                    .size(11.0)
+                    .color(theme::muted_color(ui.ctx())),
+            );
+        }
+
+        ui.add_space(8.0);
+
+        // Asset list
+        if self.project_state.assets.assets.is_empty() {
+            ui.vertical_centered(|ui| {
+                ui.add_space(40.0);
+                ui.label(
+                    RichText::new("No assets yet")
+                        .size(12.0)
+                        .color(theme::muted_color(ui.ctx())),
+                );
+                ui.label(
+                    RichText::new("Click 'Add Image' to import assets")
+                        .size(11.0)
+                        .color(theme::muted_color(ui.ctx())),
+                );
+            });
+        } else {
+            egui::ScrollArea::vertical().show(ui, |ui| {
+                let mut to_remove = None;
+
+                for (name, asset) in &self.project_state.assets.assets {
+                    theme::section_frame(ui.ctx()).show(ui, |ui| {
+                        ui.horizontal(|ui| {
+                            ui.label(RichText::new(name).strong());
+                            ui.with_layout(
+                                egui::Layout::right_to_left(egui::Align::Center),
+                                |ui| {
+                                    if ui
+                                        .add(
+                                            egui::Button::new(
+                                                RichText::new("✕").color(theme::error_color(ui.ctx())),
+                                            )
+                                            .small(),
+                                        )
+                                        .clicked()
+                                    {
+                                        to_remove = Some(name.clone());
+                                    }
+                                },
+                            );
+                        });
+
+                        ui.add_space(4.0);
+                        ui.label(
+                            RichText::new(format!("Type: {}", asset.asset_type))
+                                .size(10.0)
+                                .color(theme::muted_color(ui.ctx())),
+                        );
+                        ui.label(
+                            RichText::new(format!("Path: {}", asset.path.display()))
+                                .size(10.0)
+                                .color(theme::muted_color(ui.ctx())),
+                        );
+                    });
+                }
+
+                if let Some(name) = to_remove {
+                    self.project_state.assets.remove_asset(&name);
+                }
+            });
         }
     }
 
@@ -937,8 +1062,9 @@ pub fn default_layout() -> egui_dock::DockState<AetherTab> {
     // 3. Add Inspector to the same right panel (tabbed or split)
     tree.split_below(right_panel, 0.5, vec![AetherTab::Inspector]);
 
-    // 4. Split Left (Palette) to add Variables below it
-    tree.split_below(_left, 0.6, vec![AetherTab::Variables]);
+    // 4. Split Left (Palette) to add Variables and Assets below it
+    let [variables_panel, _] = tree.split_below(_left, 0.6, vec![AetherTab::Variables]);
+    tree.split_below(variables_panel, 0.5, vec![AetherTab::Assets]);
 
     // 5. Split Bottom of Canvas (center) for Output and CodePreview (tabbed together)
     tree.split_below(

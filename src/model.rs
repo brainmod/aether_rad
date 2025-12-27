@@ -2,7 +2,94 @@ use egui::Ui;
 use proc_macro2::TokenStream;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
+use std::path::{Path, PathBuf};
 use uuid::Uuid;
+
+/// Asset metadata for images and other resources
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Asset {
+    pub id: Uuid,
+    pub name: String,
+    pub asset_type: AssetType,
+    pub path: PathBuf,
+}
+
+/// Types of assets that can be managed
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum AssetType {
+    Image,
+    Audio,
+    Data,
+}
+
+impl std::fmt::Display for AssetType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                Self::Image => "Image",
+                Self::Audio => "Audio",
+                Self::Data => "Data",
+            }
+        )
+    }
+}
+
+/// Manages all assets in a project
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AssetManager {
+    pub assets: HashMap<String, Asset>, // name -> Asset
+}
+
+impl Default for AssetManager {
+    fn default() -> Self {
+        Self {
+            assets: HashMap::new(),
+        }
+    }
+}
+
+impl AssetManager {
+    /// Create a new empty asset manager
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Add an asset to the manager
+    pub fn add_asset(&mut self, name: String, asset_type: AssetType, path: PathBuf) {
+        let asset = Asset {
+            id: Uuid::new_v4(),
+            name: name.clone(),
+            asset_type,
+            path,
+        };
+        self.assets.insert(name, asset);
+    }
+
+    /// Remove an asset by name
+    pub fn remove_asset(&mut self, name: &str) -> Option<Asset> {
+        self.assets.remove(name)
+    }
+
+    /// Get an asset by name
+    pub fn get_asset(&self, name: &str) -> Option<&Asset> {
+        self.assets.get(name)
+    }
+
+    /// Get all image assets
+    pub fn get_images(&self) -> Vec<&Asset> {
+        self.assets
+            .values()
+            .filter(|a| a.asset_type == AssetType::Image)
+            .collect()
+    }
+
+    /// List all asset names
+    pub fn asset_names(&self) -> Vec<&str> {
+        self.assets.keys().map(|s| s.as_str()).collect()
+    }
+}
 
 /// Types supported by the variable store
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -150,6 +237,11 @@ pub struct ProjectState {
     #[serde(default = "default_project_name")]
     pub project_name: String,
 
+    /// Asset manager for images and other resources.
+    ///
+    #[serde(default)]
+    pub assets: AssetManager,
+
     /// Pending reorder operation (source_id, target_id).
     /// Not serialized - runtime only.
     #[serde(skip)]
@@ -167,6 +259,7 @@ impl Clone for ProjectState {
             selection: self.selection.clone(),
             variables: self.variables.clone(),
             project_name: self.project_name.clone(),
+            assets: self.assets.clone(),
             pending_reorder: None, // Reset pending operations on clone
         }
     }
@@ -179,8 +272,175 @@ impl ProjectState {
             selection: HashSet::new(),
             variables: HashMap::new(),
             project_name: default_project_name(),
+            assets: AssetManager::new(),
             pending_reorder: None,
         }
+    }
+
+    /// Create an empty project with just a vertical layout
+    pub fn empty() -> Self {
+        Self::new(Box::new(crate::widgets::VerticalLayout::default()))
+    }
+
+    /// Create a counter app template with label, button, and counter variable
+    pub fn template_counter_app() -> Self {
+        use crate::widgets::{VerticalLayout, LabelWidget, ButtonWidget};
+
+        let mut root = VerticalLayout::default();
+        root.children.push(Box::new(LabelWidget {
+            text: "Counter App".to_string(),
+            ..Default::default()
+        }));
+
+        let mut counter_label = LabelWidget {
+            text: "Count: 0".to_string(),
+            ..Default::default()
+        };
+        counter_label.bindings.insert("text".to_string(), "counter".to_string());
+        root.children.push(Box::new(counter_label));
+
+        let mut increment_button = ButtonWidget {
+            text: "Increment".to_string(),
+            ..Default::default()
+        };
+        increment_button.events.insert(
+            crate::model::WidgetEvent::Clicked,
+            crate::model::Action::IncrementVariable("counter".to_string()),
+        );
+        root.children.push(Box::new(increment_button));
+
+        let mut project = Self::new(Box::new(root));
+        project.project_name = "Counter App".to_string();
+        project.variables.insert(
+            "counter".to_string(),
+            Variable {
+                name: "counter".to_string(),
+                v_type: VariableType::Integer,
+                value: "0".to_string(),
+            },
+        );
+        project
+    }
+
+    /// Create a simple form template with fields and submit button
+    pub fn template_form() -> Self {
+        use crate::widgets::{VerticalLayout, LabelWidget, TextEditWidget, ButtonWidget};
+
+        let mut root = VerticalLayout::default();
+
+        root.children.push(Box::new(LabelWidget {
+            text: "Contact Form".to_string(),
+            ..Default::default()
+        }));
+
+        root.children.push(Box::new(LabelWidget {
+            text: "Name:".to_string(),
+            ..Default::default()
+        }));
+
+        let mut name_field = TextEditWidget {
+            text: "".to_string(),
+            ..Default::default()
+        };
+        name_field.bindings.insert("value".to_string(), "name".to_string());
+        root.children.push(Box::new(name_field));
+
+        root.children.push(Box::new(LabelWidget {
+            text: "Email:".to_string(),
+            ..Default::default()
+        }));
+
+        let mut email_field = TextEditWidget {
+            text: "".to_string(),
+            ..Default::default()
+        };
+        email_field.bindings.insert("value".to_string(), "email".to_string());
+        root.children.push(Box::new(email_field));
+
+        root.children.push(Box::new(ButtonWidget {
+            text: "Submit".to_string(),
+            ..Default::default()
+        }));
+
+        let mut project = Self::new(Box::new(root));
+        project.project_name = "Contact Form".to_string();
+        project.variables.insert(
+            "name".to_string(),
+            Variable {
+                name: "name".to_string(),
+                v_type: VariableType::String,
+                value: "".to_string(),
+            },
+        );
+        project.variables.insert(
+            "email".to_string(),
+            Variable {
+                name: "email".to_string(),
+                v_type: VariableType::String,
+                value: "".to_string(),
+            },
+        );
+        project
+    }
+
+    /// Create a dashboard template with labels and progress bars
+    pub fn template_dashboard() -> Self {
+        use crate::widgets::{VerticalLayout, HorizontalLayout, LabelWidget, ProgressBarWidget};
+
+        let mut root = VerticalLayout::default();
+
+        root.children.push(Box::new(LabelWidget {
+            text: "Dashboard".to_string(),
+            ..Default::default()
+        }));
+
+        // First metric row
+        let mut row1 = HorizontalLayout::default();
+        row1.children.push(Box::new(LabelWidget {
+            text: "CPU Usage:".to_string(),
+            ..Default::default()
+        }));
+        let mut cpu_progress = ProgressBarWidget {
+            value: 0.45,
+            ..Default::default()
+        };
+        cpu_progress.bindings.insert("value".to_string(), "cpu_usage".to_string());
+        row1.children.push(Box::new(cpu_progress));
+        root.children.push(Box::new(row1));
+
+        // Second metric row
+        let mut row2 = HorizontalLayout::default();
+        row2.children.push(Box::new(LabelWidget {
+            text: "Memory Usage:".to_string(),
+            ..Default::default()
+        }));
+        let mut memory_progress = ProgressBarWidget {
+            value: 0.60,
+            ..Default::default()
+        };
+        memory_progress.bindings.insert("value".to_string(), "memory_usage".to_string());
+        row2.children.push(Box::new(memory_progress));
+        root.children.push(Box::new(row2));
+
+        let mut project = Self::new(Box::new(root));
+        project.project_name = "Dashboard".to_string();
+        project.variables.insert(
+            "cpu_usage".to_string(),
+            Variable {
+                name: "cpu_usage".to_string(),
+                v_type: VariableType::Float,
+                value: "0.45".to_string(),
+            },
+        );
+        project.variables.insert(
+            "memory_usage".to_string(),
+            Variable {
+                name: "memory_usage".to_string(),
+                v_type: VariableType::Float,
+                value: "0.60".to_string(),
+            },
+        );
+        project
     }
 
     /// Serialize the entire project state to JSON.
