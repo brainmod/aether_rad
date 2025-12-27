@@ -77,7 +77,7 @@ impl WidgetNode for VerticalLayout {
             }
         }
     }
-    fn inspect(&mut self, ui: &mut Ui) {
+    fn inspect(&mut self, ui: &mut Ui, _known_variables: &[String]) {
         ui.heading("Vertical Layout Settings");
         ui.label(format!("ID: {}", self.id));
         ui.horizontal(|ui| {
@@ -119,6 +119,10 @@ pub struct ButtonWidget {
     pub id: Uuid,
     pub text: String,
     pub clicked_code: String, // Simulating a basic event action
+
+    // Maps property name (e.g. "text") to variable name (e.g. "counter")
+    #[serde(default)]
+    pub bindings: std::collections::HashMap<String, String>,
 }
 
 impl Default for ButtonWidget {
@@ -127,6 +131,7 @@ impl Default for ButtonWidget {
             id: Uuid::new_v4(),
             text: "Click Me".to_string(),
             clicked_code: String::new(),
+            bindings: std::collections::HashMap::new(),
         }
     }
 }
@@ -165,13 +170,49 @@ impl WidgetNode for ButtonWidget {
 
     // The "Inspectable" pattern: The widget defines its own property UI.
     // [cite: 137]
-    fn inspect(&mut self, ui: &mut Ui) {
+    fn inspect(&mut self, ui: &mut Ui, known_variables: &[String]) {
         ui.heading("Button Properties");
         ui.label(format!("ID: {}", self.id));
 
         ui.horizontal(|ui| {
             ui.label("Label Text:");
-            ui.text_edit_singleline(&mut self.text);
+
+            // Check binding status
+            let is_bound = self.bindings.contains_key("text");
+            let mut bound_mode = is_bound;
+
+            if ui.checkbox(&mut bound_mode, "Bind").changed() {
+                if bound_mode {
+                    // Switch to bound: set default if empty
+                    if !known_variables.is_empty() {
+                        self.bindings
+                            .insert("text".to_string(), known_variables[0].clone());
+                    } else {
+                        self.bindings.insert("text".to_string(), "".to_string());
+                    }
+                } else {
+                    self.bindings.remove("text");
+                }
+            }
+
+            if bound_mode {
+                let current_var = self.bindings.get("text").cloned().unwrap_or_default();
+                let mut selected_var = current_var.clone();
+
+                egui::ComboBox::from_id_salt("btn_txt_bind")
+                    .selected_text(&selected_var)
+                    .show_ui(ui, |ui| {
+                        for var in known_variables {
+                            ui.selectable_value(&mut selected_var, var.clone(), var);
+                        }
+                    });
+
+                if selected_var != current_var {
+                    self.bindings.insert("text".to_string(), selected_var);
+                }
+            } else {
+                ui.text_edit_singleline(&mut self.text);
+            }
         });
 
         ui.label("On Click Code:");

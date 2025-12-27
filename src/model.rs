@@ -4,6 +4,29 @@ use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
 
+/// Types supported by the variable store
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum VariableType {
+    String,
+    Integer,
+    Boolean,
+    Float,
+}
+
+impl std::fmt::Display for VariableType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self)
+    }
+}
+
+/// A variable in the global application state.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Variable {
+    pub name: String,
+    pub v_type: VariableType,
+    pub value: String, // Stored as string for simplicity in prototype
+}
+
 /// The contract for any element that can exist in the designer.
 /// Uses typetag to allow for polymorphic serialization of trait objects.
 /// [cite: 47, 55]
@@ -17,7 +40,7 @@ pub trait WidgetNode: std::fmt::Debug {
     /// Distinct behavior 2: Property Introspection
     /// How the widget exposes configurable fields to the Inspector.
     /// [cite: 51, 134]
-    fn inspect(&mut self, ui: &mut Ui);
+    fn inspect(&mut self, ui: &mut Ui, known_variables: &[String]);
 
     /// Distinct behavior 3: Code Generation
     /// Synthesizes the Rust code required to instantiate this widget.
@@ -57,7 +80,7 @@ pub struct ProjectState {
 
     /// Application state variables (e.g., "counter: i32").
     ///
-    pub variables: HashMap<String, String>,
+    pub variables: HashMap<String, Variable>,
 }
 
 impl ProjectState {
@@ -129,5 +152,22 @@ mod tests {
         // Test finding non-existent
         let found3 = project.find_node_mut(Uuid::new_v4());
         assert!(found3.is_none());
+    }
+
+    #[test]
+    fn test_variable_storage() {
+        let mut project = ProjectState::new(Box::new(VerticalLayout::default()));
+
+        project.variables.insert(
+            "counter".to_string(),
+            Variable {
+                name: "counter".to_string(),
+                v_type: VariableType::Integer,
+                value: "0".to_string(),
+            },
+        );
+
+        assert!(project.variables.contains_key("counter"));
+        assert_eq!(project.variables["counter"].v_type, VariableType::Integer);
     }
 }
