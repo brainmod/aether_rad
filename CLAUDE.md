@@ -17,27 +17,42 @@ This document provides context, bite-sized tasks, and best practices for AI agen
 
 3. **typetag**: Enables polymorphic serialization of `Box<dyn WidgetNode>` to JSON.
 
-4. **Panels**: IDE-style docking layout with Canvas, Palette, Hierarchy, Inspector, Variables, Output, and CodePreview panels.
+4. **Panels**: IDE-style docking layout with Canvas, Palette, Hierarchy, Inspector, Variables, Assets, Output, and CodePreview panels.
 
 ---
 
 ## Architecture Quick Reference
 
 ```
-src/model.rs    - WidgetNode trait, ProjectState, Variable, VariableType
-src/widgets.rs  - Widget implementations (Button, Label, layouts, etc.)
-src/ui.rs       - AetherTabViewer, panel rendering, docking layout
-src/compiler.rs - Code generation (Cargo.toml, main.rs, app.rs)
-src/app.rs      - Main app struct, eframe integration, save/load, undo/redo
-src/main.rs     - Entry point
-tests/          - Integration tests for serialization and code generation
+src/model.rs     - WidgetNode trait, ProjectState, Variable, VariableType, Action, WidgetEvent, AssetManager
+src/widgets.rs   - Widget implementations (15 widgets including layouts, inputs, and display widgets)
+src/ui.rs        - AetherTabViewer, panel rendering, docking layout
+src/compiler.rs  - Code generation (Cargo.toml, main.rs, app.rs) with prettyplease formatting
+src/app.rs       - Main app struct, eframe integration, save/load, undo/redo, copy/paste
+src/theme.rs     - Light/Dark theme configuration, color schemes
+src/syntax.rs    - Syntax highlighting for code preview (Rust and TOML)
+src/validator.rs - Cargo check integration for code validation
+src/io.rs        - Platform-agnostic file I/O (native + WASM stubs)
+src/lib.rs       - Library exports
+src/main.rs      - Entry point
+tests/           - Integration tests for serialization, codegen, and manipulation
 ```
 
 ---
 
 ## Current Implementation Status
 
-### ✅ Completed Features
+### Phase Completion Summary
+
+| Phase | Name | Status | Notes |
+|-------|------|--------|-------|
+| 1 | The Kernel (SOM, Serialization) | Complete | WidgetNode trait, ProjectState, typetag |
+| 2 | The Shell (Workspace Layout) | Complete | egui_dock with 8 panels |
+| 3 | Interactive Canvas (D&D, Gizmos) | Complete | Selection, gizmos, palette DnD |
+| 4 | Logic & Data Binding | Complete | Variables, bindings, events, actions |
+| 5 | The Compiler (Code Generation) | Complete | quote! macros, prettyplease formatting |
+
+### Extended Features (Beyond Original Plan)
 
 | Feature | Location | Notes |
 |---------|----------|-------|
@@ -49,28 +64,52 @@ tests/          - Integration tests for serialization and code generation
 | Code Preview Panel | `src/ui.rs` | Live-updating, all 3 files |
 | Project Export | `src/ui.rs` | Write to disk with folder picker |
 | Custom Project Names | `src/model.rs`, `src/compiler.rs` | Editable in Output panel |
-| Event Code Injection | `src/widgets.rs` | `clicked_code` with syntax validation |
+| Event System | `src/model.rs`, `src/widgets.rs` | WidgetEvent enum + Action enum |
 | Integration Tests | `tests/integration_tests.rs` | Round-trip, codegen, manipulation |
 | Gizmo System | `src/widgets.rs` | Orange outline, resize handles (Image) |
-| Light/Dark Theme Toggle | `src/theme.rs`, `src/app.rs`, `src/ui.rs` | Theme-aware colors, user-selectable |
-| Syntax Highlighting (Per-Token) | `src/syntax.rs`, `src/ui.rs` | LayoutJob-based coloring, theme-aware |
-| Cargo Check with Progress Feedback | `src/ui.rs`, `src/validator.rs` | Spinner animation, disabled button while checking |
+| Light/Dark Theme Toggle | `src/theme.rs`, `src/app.rs` | Theme-aware colors, user-selectable |
+| Syntax Highlighting | `src/syntax.rs`, `src/ui.rs` | LayoutJob-based coloring, theme-aware |
+| Cargo Check Validation | `src/ui.rs`, `src/validator.rs` | Spinner animation, disabled button while checking |
+| Canvas Zoom/Pan | `src/ui.rs` | Zoom slider, fit/100% buttons |
+| Multi-Selection | `src/ui.rs`, `src/widgets.rs` | Ctrl+click toggle, bulk delete |
+| Project Templates | `src/model.rs` | Empty, Counter App, Form, Dashboard |
+| Asset Manager | `src/model.rs`, `src/ui.rs` | Assets panel, image/audio/data types |
+| WASM Support | `Cargo.toml`, `src/io.rs` | Platform-agnostic file I/O |
 
-### ✅ Implemented Widgets (11 total)
+### Implemented Widgets (15 total)
 
-| Widget | Bindings | Events | Notes |
-|--------|----------|--------|-------|
-| Button | text | clicked_code | Full event support |
-| Label | text | - | |
-| Text Edit | value | - | |
-| Checkbox | checked | - | |
-| Slider | value | - | Range configurable |
-| Progress Bar | value | - | 0.0-1.0 range |
-| ComboBox | selected | - | Dynamic options list |
-| Image | - | - | Resize handles, file picker |
-| Vertical Layout | - | - | Container |
-| Horizontal Layout | - | - | Container |
-| Grid Layout | - | - | Configurable columns |
+| Widget | Category | Bindings | Events | Notes |
+|--------|----------|----------|--------|-------|
+| VerticalLayout | Layout | - | - | Container with spacing |
+| HorizontalLayout | Layout | - | - | Container with spacing |
+| GridLayout | Layout | - | - | Configurable columns |
+| Button | Input | text | Clicked, DoubleClicked | Full event support |
+| TextEdit | Input | value | Changed | String binding |
+| Checkbox | Input | checked | Changed | Boolean binding |
+| Slider | Input | value | Changed | Range configurable |
+| ComboBox | Input | selected | - | Dynamic options list |
+| Label | Display | text | - | Text binding |
+| ProgressBar | Display | value | - | 0.0-1.0 range |
+| Image | Display | - | - | Resize handles, file picker |
+| Separator | Display | - | - | Visual divider |
+| Spinner | Display | - | - | Loading indicator with size |
+| Hyperlink | Display | - | - | Clickable URL link |
+| ColorPicker | Display | color | - | RGBA color selection |
+
+---
+
+## Event System
+
+### WidgetEvent Types
+- `Clicked` - Button click, widget tap
+- `Changed` - Value modification (TextEdit, Checkbox, Slider)
+- `Hovered` - Mouse hover (available but not widely used)
+- `DoubleClicked` - Double-click (Button)
+
+### Action Types
+- `IncrementVariable(String)` - Increment a numeric variable by 1
+- `SetVariable(String, String)` - Set a variable to a specific value
+- `Custom(String)` - Custom Rust code injection
 
 ---
 
@@ -86,6 +125,8 @@ tests/          - Integration tests for serialization and code generation
        pub some_property: String,
        #[serde(default)]
        pub bindings: std::collections::HashMap<String, String>,
+       #[serde(default)]
+       pub events: std::collections::HashMap<crate::model::WidgetEvent, crate::model::Action>,
    }
    ```
 
@@ -97,6 +138,7 @@ tests/          - Integration tests for serialization and code generation
                id: Uuid::new_v4(),
                some_property: "default".to_string(),
                bindings: std::collections::HashMap::new(),
+               events: std::collections::HashMap::new(),
            }
        }
    }
@@ -106,9 +148,7 @@ tests/          - Integration tests for serialization and code generation
    ```rust
    #[typetag::serde]
    impl WidgetNode for MyWidget {
-       fn clone_box(&self) -> Box<dyn WidgetNode> {
-           Box::new(self.clone())
-       }
+       fn clone_box(&self) -> Box<dyn WidgetNode> { Box::new(self.clone()) }
        fn id(&self) -> Uuid { self.id }
        fn name(&self) -> &str { "My Widget" }
        fn render_editor(&mut self, ui: &mut Ui, selection: &mut HashSet<Uuid>) { ... }
@@ -122,127 +162,34 @@ tests/          - Integration tests for serialization and code generation
    - `HorizontalLayout::render_editor()`
    - `GridLayout::render_editor()`
 
-5. **Add to Palette** - Add widget name to the `widgets` vec in `AetherTabViewer::render_palette()` in `src/ui.rs`
+5. **Add to Palette** - Add widget name to the appropriate category in `render_widget_category()` calls in `src/ui.rs`
+
+6. **Add label** - Add widget label in `src/theme.rs` `WidgetLabels::get()` method
 
 ### Code Style
 
 - Use `quote!` for code generation, not string concatenation
 - Always derive `Debug, Serialize, Deserialize, Clone` on widget structs
-- Use `#[serde(default)]` for optional fields like `bindings`
+- Use `#[serde(default)]` for optional fields like `bindings` and `events`
 - Selection gizmos use `Color32::from_rgb(255, 165, 0)` (orange)
 - Keep `render_editor` logic simple: draw widget, handle click for selection, draw gizmo if selected
+- Use `handle_selection()` helper for multi-selection support
+- Use `draw_gizmo()` and `draw_resize_handles()` helpers for visual feedback
 
 ### Testing
 
 ```bash
 cargo build              # Verify compilation
-cargo test               # Run unit tests
+cargo test               # Run unit + integration tests
 cargo run                # Manual testing
 cargo clippy             # Lint check
 ```
 
 ---
 
-## Bite-Sized Tasks
+## Bite-Sized Tasks (Future Work)
 
-### Priority 1: Code Quality & Output Polish
-
-#### Task: Add Pretty-Printing to Generated Code
-**Complexity:** Easy | **Files:** `src/compiler.rs`, `Cargo.toml`
-
-The generated code from `quote!` is unformatted. Use `prettyplease` to make output readable.
-
-- [ ] Add `prettyplease = "0.2"` and `syn = { version = "2", features = ["full", "parsing"] }` to Cargo.toml
-- [ ] In `generate_app_rs()`, parse the TokenStream with `syn::parse2()` and format with `prettyplease::unparse()`
-- [ ] Handle parse errors gracefully (fall back to raw output)
-
-#### Task: Add Syntax Highlighting to Code Preview
-**Complexity:** Medium | **Files:** `src/ui.rs`, `Cargo.toml`
-
-The Code Preview panel shows plain text. Add syntax highlighting for Rust code.
-
-- [ ] Add `syntect = "5"` dependency
-- [ ] Create a cached syntax highlighter in AetherApp
-- [ ] In `render_code_preview()`, render highlighted text using egui's `RichText` or custom layouter
-- [ ] Use a theme that works with both light/dark modes
-
-#### Task: Validate Generated Code Compiles
-**Complexity:** Hard | **Files:** `src/compiler.rs`, `src/ui.rs`
-
-Add a "Check" button that runs `cargo check` on generated code.
-
-- [ ] In Output panel, add "🔧 Check Code" button
-- [ ] Write generated files to a temp directory
-- [ ] Run `cargo check --manifest-path <temp>/Cargo.toml` and capture output
-- [ ] Display success/error in a new status area
-- [ ] Clean up temp directory after check
-
-### Priority 2: Event System Expansion
-
-#### Task: Add Multi-Event Support to Widgets
-**Complexity:** Medium | **Files:** `src/widgets.rs`, `src/model.rs`
-
-Currently only Button has `clicked_code`. Extend the event system to support more events.
-
-- [ ] Create `WidgetEvent` enum: `Clicked`, `Changed`, `Hovered`, `DoubleClicked`
-- [ ] Add `events: HashMap<WidgetEvent, String>` to widgets that support events
-- [ ] Update Inspector to show event editors for each supported event type
-- [ ] Update codegen to emit appropriate event handlers (`.clicked()`, `.changed()`, `.hovered()`)
-- [ ] Add events to: Checkbox (changed), Slider (changed), TextEdit (changed)
-
-#### Task: Add Standard Actions System
-**Complexity:** Medium | **Files:** `src/model.rs`, `src/widgets.rs`, `src/ui.rs`
-
-Per the development plan, provide pre-built actions users can select.
-
-- [ ] Create `Action` enum: `IncrementVariable(String)`, `SetVariable(String, String)`, `Custom(String)`
-- [ ] In Inspector event editors, add dropdown to select action type
-- [ ] For `IncrementVariable`, show variable selector
-- [ ] For `SetVariable`, show variable + value fields
-- [ ] For `Custom`, show code editor (current behavior)
-- [ ] Update codegen to emit appropriate code for each action type
-
-### Priority 3: Widget Expansion
-
-#### Task: Add Separator Widget
-**Complexity:** Easy | **Files:** `src/widgets.rs`, `src/ui.rs`
-
-Simple visual separator for layouts.
-
-- [ ] Create `SeparatorWidget` struct with `id: Uuid`
-- [ ] `render_editor`: `ui.separator()` with selection gizmo
-- [ ] `codegen`: `quote! { ui.separator(); }`
-- [ ] Register in Palette and drop zones
-
-#### Task: Add Spinner/Loading Widget
-**Complexity:** Easy | **Files:** `src/widgets.rs`, `src/ui.rs`
-
-A loading spinner indicator.
-
-- [ ] Create `SpinnerWidget` with `id: Uuid`, `size: f32`
-- [ ] `render_editor`: `ui.spinner()` with size
-- [ ] Inspector: size DragValue
-- [ ] `codegen`: emit spinner code
-
-#### Task: Add ColorPicker Widget
-**Complexity:** Medium | **Files:** `src/widgets.rs`, `src/ui.rs`
-
-A color selection widget.
-
-- [ ] Create `ColorPickerWidget` with `color: [f32; 4]`, bindings
-- [ ] `render_editor`: `ui.color_edit_button_rgba_unmultiplied()`
-- [ ] Inspector: inline color picker + binding option
-- [ ] `codegen`: emit color picker code with binding support
-
-#### Task: Add Hyperlink Widget
-**Complexity:** Easy | **Files:** `src/widgets.rs`, `src/ui.rs`
-
-A clickable hyperlink.
-
-- [ ] Create `HyperlinkWidget` with `text: String`, `url: String`
-- [ ] `render_editor`: `ui.hyperlink_to()` with selection
-- [ ] Inspector: text and URL fields
-- [ ] `codegen`: emit hyperlink code
+### Priority 1: Widget Expansion
 
 #### Task: Add Window Container Widget
 **Complexity:** Hard | **Files:** `src/widgets.rs`, `src/ui.rs`
@@ -255,78 +202,48 @@ Per the development plan, allow creating egui::Window containers.
 - [ ] `codegen`: emit `egui::Window::new(...).show(ctx, |ui| { ... })`
 - [ ] Handle window state in generated app struct
 
-### Priority 4: Hierarchy & Canvas Improvements
+#### Task: Add TabContainer Widget
+**Complexity:** Medium | **Files:** `src/widgets.rs`, `src/ui.rs`
 
-#### Task: Re-enable Hierarchy Drag-and-Drop
+A tabbed container for organizing content.
+
+- [ ] Create `TabContainerWidget` with `tabs: Vec<(String, Vec<Box<dyn WidgetNode>>)>`
+- [ ] `render_editor`: Show tabs with content switching
+- [ ] Inspector: tab management (add/remove/rename)
+- [ ] `codegen`: emit proper tab UI code
+
+#### Task: Add ScrollArea Widget
+**Complexity:** Easy | **Files:** `src/widgets.rs`, `src/ui.rs`
+
+A scrollable container widget.
+
+- [ ] Create `ScrollAreaWidget` with `children: Vec<Box<dyn WidgetNode>>`, scroll direction options
+- [ ] `render_editor`: Wrap children in ScrollArea
+- [ ] `codegen`: emit `egui::ScrollArea::...`
+
+### Priority 2: Hierarchy & Canvas Improvements
+
+#### Task: Re-enable Hierarchy Drag-and-Drop Re-parenting
 **Complexity:** Medium | **Files:** `src/ui.rs`, `src/model.rs`
 
-The hierarchy DnD is disabled. Re-enable with proper reorder logic.
+The hierarchy DnD sources exist but re-parenting is not fully functional.
 
-- [ ] Switch from `draw_hierarchy_node_simple` back to `draw_hierarchy_node`
-- [ ] Fix the `pending_reorder` handling to work correctly
+- [ ] Implement proper `dnd_drop_zone` handling in hierarchy
+- [ ] Fix the `pending_reorder` handling for cross-container moves
 - [ ] Add visual drop indicators (insertion lines between items)
-- [ ] Support cross-container moves (move widget from one layout to another)
 - [ ] Add undo support for drag-and-drop reorders
 
-#### Task: Add Canvas Zoom and Pan
-**Complexity:** Medium | **Files:** `src/ui.rs`
+#### Task: Improve Canvas Zoom/Pan UX
+**Complexity:** Easy | **Files:** `src/ui.rs`
 
-Allow users to zoom and pan the canvas for large designs.
+Enhance the zoom/pan experience.
 
-- [ ] Wrap canvas content in a `ScrollArea` with zoom transform
-- [ ] Add zoom slider or Ctrl+scroll wheel support
-- [ ] Store zoom level in AetherApp (not ProjectState)
-- [ ] Add "Fit to View" and "100%" buttons
+- [ ] Add Ctrl+scroll wheel for zooming
+- [ ] Add middle-mouse drag for panning
+- [ ] Show zoom percentage in canvas header
+- [ ] Persist zoom/pan state in project
 
-#### Task: Add Multi-Selection Support
-**Complexity:** Hard | **Files:** `src/model.rs`, `src/ui.rs`, `src/app.rs`
-
-Allow selecting multiple widgets (Ctrl+click, Shift+click).
-
-- [ ] Selection is already `HashSet<Uuid>`, use it properly
-- [ ] In `render_editor`, check for Ctrl modifier before clearing selection
-- [ ] In Hierarchy, implement Shift+click for range selection
-- [ ] Update Inspector to show "N widgets selected" when multiple
-- [ ] Group operations: delete all, move all, etc.
-
-### Priority 5: WASM & Cross-Platform
-
-#### Task: Add WASM Build Configuration
-**Complexity:** Medium | **Files:** `Cargo.toml`, new files
-
-Enable web deployment as per the development plan.
-
-- [ ] Add `[target.'cfg(target_arch = "wasm32")'.dependencies]` section
-- [ ] Replace `rfd` file dialogs with browser-compatible alternatives
-- [ ] Create `index.html` and WASM loading script
-- [ ] Add build script or instructions for `wasm-pack` / `trunk`
-- [ ] Test in browser, document any limitations
-
-#### Task: Add Project Templates
-**Complexity:** Easy | **Files:** `src/app.rs`, `src/ui.rs`
-
-Provide starter templates for common app types.
-
-- [ ] Add "New Project" submenu in File menu
-- [ ] Templates: Empty, Counter App, Form, Dashboard
-- [ ] Each template creates pre-configured ProjectState with widgets and variables
-- [ ] Counter App: Label + Button + counter variable
-
-### Priority 6: Asset Management
-
-#### Task: Implement Asset Manager
-**Complexity:** Hard | **Files:** `src/model.rs`, `src/ui.rs`, new file
-
-Per the development plan, create a centralized asset registry.
-
-- [ ] Create `AssetManager` struct with `images: HashMap<String, PathBuf>`
-- [ ] Add `assets` field to `ProjectState`
-- [ ] Create "Assets" panel (new AetherTab variant)
-- [ ] Allow importing images with friendly names
-- [ ] ImageWidget references assets by name, not path
-- [ ] On export, copy assets to output directory
-
-### Priority 7: Testing & Documentation
+### Priority 3: Code Quality
 
 #### Task: Add Codegen Compilation Test
 **Complexity:** Medium | **Files:** `tests/`
@@ -348,12 +265,49 @@ Test deeply nested widget structures.
 - [ ] Verify serialization/deserialization preserves nesting
 - [ ] Verify codegen produces valid nested code
 
-#### Task: Add Binding Edge Case Tests
-**Complexity:** Easy | **Files:** `tests/integration_tests.rs`
+### Priority 4: Event System Expansion
 
-- [ ] Test binding to non-existent variable (should handle gracefully)
-- [ ] Test changing variable type after binding
-- [ ] Test multiple widgets bound to same variable
+#### Task: Add Hover Event Support
+**Complexity:** Easy | **Files:** `src/widgets.rs`
+
+Enable hover events for interactive widgets.
+
+- [ ] Add `Hovered` event handling to Button, Image widgets
+- [ ] Update Inspector to show hover event option
+- [ ] Update codegen to emit `.hovered()` checks
+
+#### Task: Add Focus Events
+**Complexity:** Medium | **Files:** `src/model.rs`, `src/widgets.rs`
+
+Support focus/blur events for input widgets.
+
+- [ ] Add `Focused`, `LostFocus` to WidgetEvent enum
+- [ ] Implement for TextEdit, ComboBox
+- [ ] Update codegen
+
+### Priority 5: WASM Improvements
+
+#### Task: Implement Browser File API
+**Complexity:** Hard | **Files:** `src/io.rs`
+
+Currently WASM file dialogs return None. Use browser File API.
+
+- [ ] Research web-sys File API integration
+- [ ] Implement async file picker for WASM target
+- [ ] Support drag-and-drop file loading
+- [ ] Add IndexedDB storage for projects
+
+### Priority 6: Asset Management
+
+#### Task: Complete Asset Integration
+**Complexity:** Medium | **Files:** `src/ui.rs`, `src/model.rs`
+
+Finish the asset manager integration.
+
+- [ ] Implement actual file import in Assets panel
+- [ ] Allow ImageWidget to reference assets by name
+- [ ] Copy assets to output directory on export
+- [ ] Generate code that loads assets from relative paths
 
 ---
 
@@ -403,18 +357,11 @@ if let Some(var) = self.bindings.get("property_name") {
 fn render_editor(&mut self, ui: &mut Ui, selection: &mut HashSet<Uuid>) {
     let response = ui.some_widget(...);
 
-    if response.clicked() {
-        selection.clear();
-        selection.insert(self.id);
-    }
+    // Use helper for multi-selection
+    handle_selection(ui, self.id, response.clicked(), selection);
 
     if selection.contains(&self.id) {
-        ui.painter().rect_stroke(
-            response.rect,
-            0.0,
-            egui::Stroke::new(2.0, egui::Color32::from_rgb(255, 165, 0)),
-            egui::StrokeKind::Outside,
-        );
+        draw_gizmo(ui, response.rect);
     }
 
     // Optional: tooltips
@@ -427,71 +374,61 @@ fn render_editor(&mut self, ui: &mut Ui, selection: &mut HashSet<Uuid>) {
 ```rust
 // In struct:
 #[serde(default)]
-pub changed_code: String,
+pub events: std::collections::HashMap<crate::model::WidgetEvent, crate::model::Action>,
 
 // In inspect():
 ui.separator();
-ui.heading("On Change Event");
-let code_editor = egui::TextEdit::multiline(&mut self.changed_code)
-    .code_editor()
-    .desired_rows(3);
-ui.add(code_editor);
+ui.heading("Events");
 
-if !self.changed_code.trim().is_empty() {
-    if self.changed_code.parse::<proc_macro2::TokenStream>().is_ok() {
-        ui.colored_label(egui::Color32::GREEN, "✓ Valid Rust syntax");
+let mut events_to_add = None;
+let mut events_to_remove = None;
+
+let possible_events = [WidgetEvent::Changed]; // List supported events
+
+for event in &possible_events {
+    if self.events.contains_key(event) {
+        ui.collapsing(format!("{}", event), |ui| {
+            if let Some(action) = self.events.get_mut(event) {
+                render_action_editor(ui, action, known_variables);
+            }
+            if ui.button("Remove Event").clicked() {
+                events_to_remove = Some(*event);
+            }
+        });
     } else {
-        ui.colored_label(egui::Color32::RED, "✗ Invalid Rust syntax");
+        if ui.button(format!("+ Add {}", event)).clicked() {
+            events_to_add = Some(*event);
+        }
     }
 }
 
+if let Some(event) = events_to_add {
+    self.events.insert(event, Action::Custom(String::new()));
+}
+if let Some(event) = events_to_remove {
+    self.events.remove(&event);
+}
+
 // In codegen():
-let action = if !self.changed_code.trim().is_empty() {
-    match self.changed_code.parse::<proc_macro2::TokenStream>() {
-        Ok(tokens) => tokens,
-        Err(_) => quote! { /* Invalid code */ }
-    }
+let changed_code = if let Some(action) = self.events.get(&WidgetEvent::Changed) {
+    action.to_code()
 } else {
     quote! {}
 };
 
 quote! {
     if ui.add(SomeWidget).changed() {
-        #action
+        #changed_code
     }
 }
 ```
 
 ---
 
-## Recent Improvements (Latest Session)
-
-### ✨ Light/Dark Theme Toggle
-- Added `ThemeMode` enum (Light/Dark) to `src/theme.rs`
-- Created `LightModeColors` struct with appropriate light-themed colors
-- Updated `configure_aether_theme()` to accept theme mode parameter
-- Theme toggle button in Output panel (☀️/🌙 icons)
-- All panels and components now respect theme setting
-- Real-time theme switching on every frame
-
-### ✨ Syntax Highlighting with Per-Token Colors
-- Replaced monochrome syntax highlighting with `LayoutJob`-based per-token coloring
-- Extracts style information from syntect and applies proper colors to each token
-- Theme-aware: uses "Solarized (light)" for light mode, "Solarized (dark)" for dark mode
-- Code preview now displays proper syntax coloring in all code sections
-- Implemented in `src/syntax.rs` with helper functions for color conversion
-
-### ✨ Cargo Check with Progress Feedback
-- Added visual spinner animation while cargo check runs
-- Button disabled during validation to prevent multiple concurrent checks
-- Status message updates: "⏳ Cargo check in progress..."
-- Spinner provides immediate visual feedback that work is happening
-- Extended `ValidationStatus` enum with proper checking state handling
-
 ## Reference Documentation
 
 - **Full Architecture**: See `Rust RAD Utility Development Plan.md`
-- **Progress Log**: See `GEMINI.md`
+- **WASM Setup**: See `WASM.md`
 - **egui Docs**: https://docs.rs/egui
 - **quote Docs**: https://docs.rs/quote
 - **typetag Docs**: https://docs.rs/typetag
