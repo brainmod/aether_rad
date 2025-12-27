@@ -76,11 +76,11 @@ impl WidgetIcons {
             "ComboBox" => "☰",
 
             // Display
-            "Label" => "𝐀",
+            "Label" => "A",
             "Progress Bar" => "▰",
             "Image" => "🖼",
             "Separator" => "━",
-            "Spinner" => "◌",
+            "Spinner" => "⟲",
             "Hyperlink" => "🔗",
 
             // Default
@@ -246,28 +246,25 @@ pub fn panel_header_frame(ctx: &egui::Context) -> egui::Frame {
         .corner_radius(CornerRadius::same(4))
 }
 
-/// Styled heading text
+/// Styled heading text (theme-aware)
 pub fn heading(text: &str) -> egui::RichText {
     egui::RichText::new(text)
         .size(16.0)
         .strong()
-        .color(AetherColors::HEADING)
 }
 
-/// Styled subheading text
+/// Styled subheading text (theme-aware)
 pub fn subheading(text: &str) -> egui::RichText {
     egui::RichText::new(text)
         .size(13.0)
         .strong()
-        .color(AetherColors::SUBHEADING)
 }
 
-/// Muted/secondary text
+/// Muted/secondary text (theme-aware)
 #[allow(dead_code)]
 pub fn muted(text: &str) -> egui::RichText {
     egui::RichText::new(text)
         .size(11.0)
-        .color(AetherColors::MUTED)
 }
 
 /// Code/monospace text
