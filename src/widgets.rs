@@ -8,6 +8,68 @@ use uuid::Uuid;
 // ... existing imports
 // Ensure you import ButtonWidget and the necessary macros
 
+// === Gizmo Helper Functions ===
+
+const GIZMO_COLOR: egui::Color32 = egui::Color32::from_rgb(255, 165, 0);
+const HANDLE_SIZE: f32 = 8.0;
+
+/// Draw a selection gizmo (orange outline) around a widget
+fn draw_gizmo(ui: &egui::Ui, rect: egui::Rect) {
+    ui.painter().rect_stroke(
+        rect,
+        0.0,
+        egui::Stroke::new(2.0, GIZMO_COLOR),
+        egui::StrokeKind::Outside,
+    );
+}
+
+/// Draw resize handles at the corners and edges of a rect
+fn draw_resize_handles(ui: &egui::Ui, rect: egui::Rect) {
+    let handles = [
+        (rect.left_top(), "nw"),
+        (rect.center_top(), "n"),
+        (rect.right_top(), "ne"),
+        (rect.right_center(), "e"),
+        (rect.right_bottom(), "se"),
+        (rect.center_bottom(), "s"),
+        (rect.left_bottom(), "sw"),
+        (rect.left_center(), "w"),
+    ];
+
+    for (pos, _label) in handles {
+        let handle_rect = egui::Rect::from_center_size(pos, egui::vec2(HANDLE_SIZE, HANDLE_SIZE));
+        ui.painter().rect_filled(handle_rect, 0.0, GIZMO_COLOR);
+        ui.painter().rect_stroke(
+            handle_rect,
+            0.0,
+            egui::Stroke::new(1.0, egui::Color32::WHITE),
+            egui::StrokeKind::Inside,
+        );
+    }
+}
+
+/// Check if mouse is hovering over a resize handle and return which one
+fn check_resize_handle(_ui: &egui::Ui, rect: egui::Rect, mouse_pos: egui::Pos2) -> Option<&'static str> {
+    let handles = [
+        (rect.left_top(), "nw"),
+        (rect.center_top(), "n"),
+        (rect.right_top(), "ne"),
+        (rect.right_center(), "e"),
+        (rect.right_bottom(), "se"),
+        (rect.center_bottom(), "s"),
+        (rect.left_bottom(), "sw"),
+        (rect.left_center(), "w"),
+    ];
+
+    for (pos, label) in handles {
+        let handle_rect = egui::Rect::from_center_size(pos, egui::vec2(HANDLE_SIZE, HANDLE_SIZE));
+        if handle_rect.contains(mouse_pos) {
+            return Some(label);
+        }
+    }
+    None
+}
+
 /// A container that arranges children vertically.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct VerticalLayout {
@@ -60,12 +122,7 @@ impl WidgetNode for VerticalLayout {
 
         // Gizmo (Outline)
         if is_selected {
-            ui.painter().rect_stroke(
-                response.rect,
-                0.0,
-                egui::Stroke::new(2.0, egui::Color32::from_rgb(255, 165, 0)),
-                egui::StrokeKind::Outside,
-            );
+            draw_gizmo(ui, response.rect);
         }
 
         // Drop Zone
@@ -87,6 +144,7 @@ impl WidgetNode for VerticalLayout {
                     "Image" => Box::new(ImageWidget::default()),
                     "Vertical Layout" => Box::new(VerticalLayout::default()),
                     "Horizontal Layout" => Box::new(HorizontalLayout::default()),
+                    "Grid Layout" => Box::new(GridLayout::default()),
                     _ => return,
                 };
                 self.children.push(new_widget);
@@ -192,6 +250,7 @@ impl WidgetNode for HorizontalLayout {
                             "Image" => Box::new(ImageWidget::default()),
                             "Vertical Layout" => Box::new(VerticalLayout::default()),
                             "Horizontal Layout" => Box::new(HorizontalLayout::default()),
+                            "Grid Layout" => Box::new(GridLayout::default()),
                             _ => return,
                         };
                         self.children.push(new_widget);
@@ -202,12 +261,7 @@ impl WidgetNode for HorizontalLayout {
 
         let is_selected = selection.contains(&self.id);
         if is_selected {
-            ui.painter().rect_stroke(
-                response.rect,
-                0.0,
-                egui::Stroke::new(2.0, egui::Color32::from_rgb(255, 165, 0)),
-                egui::StrokeKind::Outside,
-            );
+            draw_gizmo(ui, response.rect);
         }
     }
 
@@ -233,6 +287,152 @@ impl WidgetNode for HorizontalLayout {
     fn children(&self) -> Option<&Vec<Box<dyn WidgetNode>>> {
         Some(&self.children)
     }
+    fn children_mut(&mut self) -> Option<&mut Vec<Box<dyn WidgetNode>>> {
+        Some(&mut self.children)
+    }
+}
+
+/// A container that arranges children in a grid with a specified number of columns.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct GridLayout {
+    pub id: Uuid,
+    pub children: Vec<Box<dyn WidgetNode>>,
+    pub columns: usize,
+    pub spacing: f32,
+}
+
+impl Default for GridLayout {
+    fn default() -> Self {
+        Self {
+            id: Uuid::new_v4(),
+            children: Vec::new(),
+            columns: 2, // Default to 2 columns
+            spacing: 5.0,
+        }
+    }
+}
+
+#[typetag::serde]
+impl WidgetNode for GridLayout {
+    fn clone_box(&self) -> Box<dyn WidgetNode> {
+        Box::new(Self {
+            id: self.id,
+            children: self.children.iter().map(|c| c.clone_box()).collect(),
+            columns: self.columns,
+            spacing: self.spacing,
+        })
+    }
+
+    fn id(&self) -> Uuid {
+        self.id
+    }
+
+    fn name(&self) -> &str {
+        "Grid Layout"
+    }
+
+    fn render_editor(&mut self, ui: &mut Ui, selection: &mut HashSet<Uuid>) {
+        let response = ui
+            .vertical(|ui| {
+                ui.spacing_mut().item_spacing = egui::vec2(self.spacing, self.spacing);
+
+                // Render children in grid format
+                let mut row_children = Vec::new();
+                let total_children = self.children.len();
+                for (idx, child) in self.children.iter_mut().enumerate() {
+                    row_children.push(child);
+
+                    // When we reach the column count or the last child, render the row
+                    if (idx + 1) % self.columns == 0 || idx == total_children - 1 {
+                        ui.horizontal(|ui| {
+                            ui.spacing_mut().item_spacing.x = self.spacing;
+                            for child in row_children.drain(..) {
+                                child.render_editor(ui, selection);
+                            }
+                        });
+                    }
+                }
+
+                // Drop Zone for adding widgets to grid
+                let (_response, payload_option) =
+                    ui.dnd_drop_zone::<String, _>(egui::Frame::NONE, |ui| {
+                        ui.label("Drag widget here to add...");
+                    });
+
+                if let Some(payload) = payload_option {
+                    if ui.input(|i| i.pointer.any_released()) {
+                        let new_widget: Box<dyn WidgetNode> = match payload.as_str() {
+                            "Button" => Box::new(ButtonWidget::default()),
+                            "Label" => Box::new(LabelWidget::default()),
+                            "Text Edit" => Box::new(TextEditWidget::default()),
+                            "Checkbox" => Box::new(CheckboxWidget::default()),
+                            "Slider" => Box::new(SliderWidget::default()),
+                            "Progress Bar" => Box::new(ProgressBarWidget::default()),
+                            "ComboBox" => Box::new(ComboBoxWidget::default()),
+                            "Image" => Box::new(ImageWidget::default()),
+                            "Vertical Layout" => Box::new(VerticalLayout::default()),
+                            "Horizontal Layout" => Box::new(HorizontalLayout::default()),
+                            "Grid Layout" => Box::new(GridLayout::default()),
+                            _ => return,
+                        };
+                        self.children.push(new_widget);
+                    }
+                }
+            })
+            .response;
+
+        let is_selected = selection.contains(&self.id);
+        if is_selected {
+            draw_gizmo(ui, response.rect);
+        }
+    }
+
+    fn inspect(&mut self, ui: &mut Ui, _known_variables: &[String]) {
+        ui.heading("Grid Layout Settings");
+        ui.label(format!("ID: {}", self.id));
+        ui.horizontal(|ui| {
+            ui.label("Columns:");
+            ui.add(egui::DragValue::new(&mut self.columns).speed(1.0).range(1..=10));
+        });
+        ui.horizontal(|ui| {
+            ui.label("Spacing:");
+            ui.add(egui::DragValue::new(&mut self.spacing).speed(0.1));
+        });
+        ui.label(format!("Children count: {}", self.children.len()));
+    }
+
+    fn codegen(&self) -> proc_macro2::TokenStream {
+        let columns = self.columns;
+
+        // Group children into rows
+        let mut row_streams = Vec::new();
+        let mut current_row = Vec::new();
+
+        for (idx, child) in self.children.iter().enumerate() {
+            current_row.push(child.codegen());
+
+            // When we reach the column count or the last child, complete the row
+            if (idx + 1) % columns == 0 || idx == self.children.len() - 1 {
+                let row_widgets = current_row.drain(..).collect::<Vec<_>>();
+                row_streams.push(quote! {
+                    ui.horizontal(|ui| {
+                        #(#row_widgets)*
+                    });
+                });
+            }
+        }
+
+        quote! {
+            ui.vertical(|ui| {
+                #(#row_streams)*
+            });
+        }
+    }
+
+    fn children(&self) -> Option<&Vec<Box<dyn WidgetNode>>> {
+        Some(&self.children)
+    }
+
     fn children_mut(&mut self) -> Option<&mut Vec<Box<dyn WidgetNode>>> {
         Some(&mut self.children)
     }
@@ -288,13 +488,11 @@ impl WidgetNode for ButtonWidget {
         }
 
         if selection.contains(&self.id) {
-            ui.painter().rect_stroke(
-                response.rect,
-                0.0,
-                egui::Stroke::new(2.0, egui::Color32::from_rgb(255, 165, 0)),
-                egui::StrokeKind::Outside,
-            );
+            draw_gizmo(ui, response.rect);
         }
+
+        // Show tooltip on hover with widget properties
+        response.on_hover_text(format!("Button: {}\nID: {}", self.text, self.id));
     }
 
     // The "Inspectable" pattern: The widget defines its own property UI.
@@ -410,13 +608,11 @@ impl WidgetNode for LabelWidget {
             selection.insert(self.id);
         }
         if selection.contains(&self.id) {
-            ui.painter().rect_stroke(
-                response.rect,
-                0.0,
-                egui::Stroke::new(2.0, egui::Color32::from_rgb(255, 165, 0)),
-                egui::StrokeKind::Outside,
-            );
+            draw_gizmo(ui, response.rect);
         }
+
+        // Show tooltip
+        response.on_hover_text(format!("Label: {}\nID: {}", self.text, self.id));
     }
 
     fn inspect(&mut self, ui: &mut Ui, known_variables: &[String]) {
@@ -508,13 +704,11 @@ impl WidgetNode for TextEditWidget {
             }
         }
         if selection.contains(&self.id) {
-            ui.painter().rect_stroke(
-                response.rect,
-                0.0,
-                egui::Stroke::new(2.0, egui::Color32::from_rgb(255, 165, 0)),
-                egui::StrokeKind::Outside,
-            );
+            draw_gizmo(ui, response.rect);
         }
+
+        // Show tooltip
+        response.on_hover_text(format!("Text Edit: {}\nID: {}", self.text, self.id));
     }
 
     fn inspect(&mut self, ui: &mut Ui, known_variables: &[String]) {
@@ -601,13 +795,11 @@ impl WidgetNode for CheckboxWidget {
             selection.insert(self.id);
         }
         if selection.contains(&self.id) {
-            ui.painter().rect_stroke(
-                response.rect,
-                0.0,
-                egui::Stroke::new(2.0, egui::Color32::from_rgb(255, 165, 0)),
-                egui::StrokeKind::Outside,
-            );
+            draw_gizmo(ui, response.rect);
         }
+
+        // Show tooltip
+        response.on_hover_text(format!("Checkbox: {} ({})\nID: {}", self.label, if self.checked { "✓" } else { "☐" }, self.id));
     }
 
     fn inspect(&mut self, ui: &mut Ui, known_variables: &[String]) {
@@ -706,13 +898,11 @@ impl WidgetNode for SliderWidget {
             }
         }
         if selection.contains(&self.id) {
-            ui.painter().rect_stroke(
-                response.rect,
-                0.0,
-                egui::Stroke::new(2.0, egui::Color32::from_rgb(255, 165, 0)),
-                egui::StrokeKind::Outside,
-            );
+            draw_gizmo(ui, response.rect);
         }
+
+        // Show tooltip
+        response.on_hover_text(format!("Slider: {} ({}-{})\nID: {}", self.value, self.min, self.max, self.id));
     }
 
     fn inspect(&mut self, ui: &mut Ui, known_variables: &[String]) {
@@ -811,13 +1001,11 @@ impl WidgetNode for ProgressBarWidget {
             selection.insert(self.id);
         }
         if selection.contains(&self.id) {
-            ui.painter().rect_stroke(
-                response.rect,
-                0.0,
-                egui::Stroke::new(2.0, egui::Color32::from_rgb(255, 165, 0)),
-                egui::StrokeKind::Outside,
-            );
+            draw_gizmo(ui, response.rect);
         }
+
+        // Show tooltip
+        response.on_hover_text(format!("Progress Bar: {:.0}%\nID: {}", self.value * 100.0, self.id));
     }
 
     fn inspect(&mut self, ui: &mut Ui, known_variables: &[String]) {
@@ -904,7 +1092,7 @@ impl WidgetNode for ComboBoxWidget {
     }
 
     fn render_editor(&mut self, ui: &mut Ui, selection: &mut HashSet<Uuid>) {
-        ui.horizontal(|ui| {
+        let outer_response = ui.horizontal(|ui| {
             ui.label(&self.label);
 
             let selected_text = self.options.get(self.selected).map(|s| s.as_str()).unwrap_or("");
@@ -922,14 +1110,15 @@ impl WidgetNode for ComboBoxWidget {
             }
 
             if selection.contains(&self.id) {
-                ui.painter().rect_stroke(
-                    response.response.rect,
-                    0.0,
-                    egui::Stroke::new(2.0, egui::Color32::from_rgb(255, 165, 0)),
-                    egui::StrokeKind::Outside,
-                );
+                draw_gizmo(ui, response.response.rect);
             }
+
+            response.response
         });
+
+        // Show tooltip
+        let selected_text = self.options.get(self.selected).map(|s| s.as_str()).unwrap_or("");
+        outer_response.response.on_hover_text(format!("ComboBox: {}\nSelected: {}\nID: {}", self.label, selected_text, self.id));
     }
 
     fn inspect(&mut self, ui: &mut Ui, known_variables: &[String]) {
@@ -1084,14 +1273,70 @@ impl WidgetNode for ImageWidget {
             selection.insert(self.id);
         }
 
-        if selection.contains(&self.id) {
-            ui.painter().rect_stroke(
-                response.rect,
-                0.0,
-                egui::Stroke::new(2.0, egui::Color32::from_rgb(255, 165, 0)),
-                egui::StrokeKind::Outside,
-            );
+        let is_selected = selection.contains(&self.id);
+        if is_selected {
+            draw_gizmo(ui, response.rect);
+            draw_resize_handles(ui, response.rect);
+
+            // Handle resize dragging
+            if let Some(hover_pos) = ui.ctx().pointer_hover_pos() {
+                if let Some(handle) = check_resize_handle(ui, response.rect, hover_pos) {
+                    // Show resize cursor based on handle direction
+                    let cursor = match handle {
+                        "nw" | "se" => egui::CursorIcon::ResizeNwSe,
+                        "ne" | "sw" => egui::CursorIcon::ResizeNeSw,
+                        "n" | "s" => egui::CursorIcon::ResizeVertical,
+                        "e" | "w" => egui::CursorIcon::ResizeHorizontal,
+                        _ => egui::CursorIcon::Default,
+                    };
+                    ui.ctx().set_cursor_icon(cursor);
+
+                    // If dragging, resize the image
+                    if ui.input(|i| i.pointer.primary_down()) {
+                        let delta = ui.input(|i| i.pointer.delta());
+
+                        // Handle horizontal resize
+                        match handle {
+                            "e" | "ne" | "se" => {
+                                if let Some(w) = self.width.as_mut() {
+                                    *w = (*w + delta.x).max(10.0);
+                                }
+                            }
+                            "w" | "nw" | "sw" => {
+                                if let Some(w) = self.width.as_mut() {
+                                    *w = (*w - delta.x).max(10.0);
+                                }
+                            }
+                            _ => {}
+                        }
+
+                        // Handle vertical resize
+                        match handle {
+                            "s" | "se" | "sw" => {
+                                if let Some(h) = self.height.as_mut() {
+                                    *h = (*h + delta.y).max(10.0);
+                                }
+                            }
+                            "n" | "nw" | "ne" => {
+                                if let Some(h) = self.height.as_mut() {
+                                    *h = (*h - delta.y).max(10.0);
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+            }
         }
+
+        // Show tooltip with image info
+        let size_info = match (self.width, self.height) {
+            (Some(w), Some(h)) => format!(" ({}x{})", w, h),
+            (Some(w), None) => format!(" (w:{})", w),
+            (None, Some(h)) => format!(" (h:{})", h),
+            (None, None) => "".to_string(),
+        };
+        response.on_hover_text(format!("Image{}\nPath: {}\nID: {}", size_info, self.path, self.id));
     }
 
     fn inspect(&mut self, ui: &mut Ui, _known_variables: &[String]) {

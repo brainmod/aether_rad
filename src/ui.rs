@@ -69,6 +69,7 @@ impl<'a> AetherTabViewer<'a> {
             "Image",
             "Vertical Layout",
             "Horizontal Layout",
+            "Grid Layout",
         ];
 
         for widget_type in widgets {
@@ -82,6 +83,58 @@ impl<'a> AetherTabViewer<'a> {
     fn render_hierarchy(&mut self, ui: &mut Ui) {
         ui.heading("Tree View");
         let ps = &mut self.project_state;
+
+        // Keyboard navigation for hierarchy
+        if ui.ui_contains_pointer() {
+            ui.input(|i| {
+                let all_ids = ps.get_all_widget_ids();
+
+                // Get currently selected widget (if any)
+                let current_selected = ps.selection.iter().next().cloned();
+
+                // Arrow Up - Navigate to previous widget
+                if i.key_pressed(egui::Key::ArrowUp) {
+                    if let Some(current) = current_selected {
+                        if let Some(current_idx) = all_ids.iter().position(|id| *id == current) {
+                            if current_idx > 0 {
+                                let prev_id = all_ids[current_idx - 1];
+                                ps.selection.clear();
+                                ps.selection.insert(prev_id);
+                            }
+                        }
+                    } else if !all_ids.is_empty() {
+                        // No selection, select first widget
+                        ps.selection.insert(all_ids[0]);
+                    }
+                }
+
+                // Arrow Down - Navigate to next widget
+                if i.key_pressed(egui::Key::ArrowDown) {
+                    if let Some(current) = current_selected {
+                        if let Some(current_idx) = all_ids.iter().position(|id| *id == current) {
+                            if current_idx < all_ids.len() - 1 {
+                                let next_id = all_ids[current_idx + 1];
+                                ps.selection.clear();
+                                ps.selection.insert(next_id);
+                            }
+                        }
+                    } else if !all_ids.is_empty() {
+                        // No selection, select first widget
+                        ps.selection.insert(all_ids[0]);
+                    }
+                }
+
+                // Enter - Confirm selection (already selected, but provides feedback)
+                if i.key_pressed(egui::Key::Enter) {
+                    // Selection already exists, this could be used for editing later
+                }
+
+                // Escape - Clear selection
+                if i.key_pressed(egui::Key::Escape) {
+                    ps.selection.clear();
+                }
+            });
+        }
 
         // Track if any reordering happened
         let mut reorder_action: Option<(Uuid, Uuid)> = None;

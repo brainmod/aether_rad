@@ -153,6 +153,22 @@ impl ProjectState {
     pub fn reorder_widget(&mut self, widget_id: Uuid, new_index: usize) -> bool {
         reorder_widget_recursive(self.root_node.as_mut(), widget_id, new_index)
     }
+
+    /// Get all widget IDs in hierarchy order (depth-first traversal)
+    pub fn get_all_widget_ids(&self) -> Vec<Uuid> {
+        let mut ids = Vec::new();
+        collect_widget_ids(self.root_node.as_ref(), &mut ids);
+        ids
+    }
+}
+
+fn collect_widget_ids(node: &dyn WidgetNode, ids: &mut Vec<Uuid>) {
+    ids.push(node.id());
+    if let Some(children) = node.children() {
+        for child in children {
+            collect_widget_ids(child.as_ref(), ids);
+        }
+    }
 }
 
 fn find_node_recursive_mut(node: &mut dyn WidgetNode, target: Uuid) -> Option<&mut dyn WidgetNode> {
