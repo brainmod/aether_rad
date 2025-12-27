@@ -1,11 +1,12 @@
 mod app;
+mod compiler;
 mod model;
 mod ui;
 mod widgets;
 
-use app::AetherApp;
+use crate::app::AetherApp;
 
-fn main() -> eframe::Result<()> {
+fn main() -> eframe::Result {
     // Define native window options
     let native_options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()

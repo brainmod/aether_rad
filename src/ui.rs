@@ -1,3 +1,4 @@
+use crate::compiler::Compiler;
 use crate::model::{ProjectState, Variable, VariableType, WidgetNode};
 use egui::{Ui, WidgetText};
 use egui_dock::TabViewer;
@@ -88,7 +89,21 @@ impl<'a> AetherTabViewer<'a> {
     }
 
     fn render_output(&mut self, ui: &mut Ui) {
-        ui.label("Compilation Output / Logs");
+        ui.heading("Compilation Output");
+        ui.separator();
+
+        if ui.button("Generate Code").clicked() {
+            // In a real app, we would write these to disk or show tabs for each file.
+            // For this prototype, we'll dump app.rs to the console/log area.
+            let code = Compiler::generate_app_rs(&self.project_state);
+            // We can't easily store the string in 'self' here without adding a field to TabViewer
+            // or ProjectState (which shouldn't hold UI state).
+            // For now, let's just print to stdout for debugging and show a "Done" label.
+            println!("--- Generated app.rs ---\n{}", code);
+            println!("------------------------");
+        }
+
+        ui.label("Check stdout for generated code (Prototype limitation).");
         ui.code("Waiting for build...");
     }
 

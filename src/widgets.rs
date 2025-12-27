@@ -222,9 +222,16 @@ impl WidgetNode for ButtonWidget {
     // Generating the AST for the final Rust application.
     // [cite: 184]
     fn codegen(&self) -> proc_macro2::TokenStream {
-        let label = &self.text;
+        let label_tokens = if let Some(var_name) = self.bindings.get("text") {
+            let ident = quote::format_ident!("{}", var_name);
+            quote! { &self.#ident }
+        } else {
+            let text = &self.text;
+            quote! { #text }
+        };
+
         quote! {
-            if ui.button(#label).clicked() {
+            if ui.button(#label_tokens).clicked() {
                 // Logic would be injected here
             }
         }
