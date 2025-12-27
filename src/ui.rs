@@ -1018,6 +1018,9 @@ fn draw_hierarchy_node_styled(
     // Indent based on depth
     let indent = depth as f32 * 12.0;
 
+    // Read modifiers BEFORE entering any nested closures to avoid deadlock
+    let cmd_held = ui.input(|i| i.modifiers.command);
+
     if has_children {
         let display_text = label.to_string();
         let text_color = if is_selected {
@@ -1043,28 +1046,21 @@ fn draw_hierarchy_node_styled(
                 }
             });
 
-            // Make the header draggable
-            let _drag_response = ui.dnd_drag_source(egui::Id::new(id), id.to_string(), |ui| {
-                ui.label("");
-            });
-
             // Handle multi-selection with Ctrl/Cmd support
-            ui.input(|i| {
-                if response.header_response.clicked() {
-                    if i.modifiers.command {
-                        // Ctrl/Cmd + click: toggle selection
-                        if selection.contains(&id) {
-                            selection.remove(&id);
-                        } else {
-                            selection.insert(id);
-                        }
+            if response.header_response.clicked() {
+                if cmd_held {
+                    // Ctrl/Cmd + click: toggle selection
+                    if selection.contains(&id) {
+                        selection.remove(&id);
                     } else {
-                        // Normal click: clear and select only this widget
-                        selection.clear();
                         selection.insert(id);
                     }
+                } else {
+                    // Normal click: clear and select only this widget
+                    selection.clear();
+                    selection.insert(id);
                 }
-            });
+            }
 
             // Selection indicator
             if is_selected {
@@ -1091,28 +1087,21 @@ fn draw_hierarchy_node_styled(
             let response =
                 ui.selectable_label(is_selected, RichText::new(display_text).color(text_color));
 
-            // Make the label draggable
-            let _drag_response = ui.dnd_drag_source(egui::Id::new(id), id.to_string(), |ui| {
-                ui.label("");
-            });
-
             // Handle multi-selection with Ctrl/Cmd support
-            ui.input(|i| {
-                if response.clicked() {
-                    if i.modifiers.command {
-                        // Ctrl/Cmd + click: toggle selection
-                        if selection.contains(&id) {
-                            selection.remove(&id);
-                        } else {
-                            selection.insert(id);
-                        }
+            if response.clicked() {
+                if cmd_held {
+                    // Ctrl/Cmd + click: toggle selection
+                    if selection.contains(&id) {
+                        selection.remove(&id);
                     } else {
-                        // Normal click: clear and select only this widget
-                        selection.clear();
                         selection.insert(id);
                     }
+                } else {
+                    // Normal click: clear and select only this widget
+                    selection.clear();
+                    selection.insert(id);
                 }
-            });
+            }
         });
     }
 }
