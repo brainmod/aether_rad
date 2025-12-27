@@ -111,6 +111,13 @@ impl<'a> AetherTabViewer<'a> {
                         *self.canvas_pan = egui::Vec2::ZERO;
                     }
 
+                    // Show current zoom percentage
+                    ui.label(
+                        RichText::new(format!("{}%", (*self.canvas_zoom * 100.0) as i32))
+                            .size(11.0)
+                            .color(muted_color),
+                    );
+
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         ui.label(
                             RichText::new(format!(
@@ -136,15 +143,16 @@ impl<'a> AetherTabViewer<'a> {
                     Color32::from_rgb(55, 55, 65)
                 };
 
-                egui::Frame::new()
+                let canvas_rect = egui::Frame::new()
                     .fill(canvas_bg)
                     .inner_margin(egui::Margin::same(12))
                     .corner_radius(CornerRadius::same(8))
                     .stroke(egui::Stroke::new(1.0, canvas_stroke))
                     .show(ui, |ui| {
-                        // Scroll area for panning
+                        // Scroll area for panning with offset
                         egui::ScrollArea::both()
                             .auto_shrink([false; 2])
+                            .scroll_offset(*self.canvas_pan)
                             .show(ui, |ui| {
                                 // Zoom scales the canvas by adjusting spacing
                                 let zoom = *self.canvas_zoom;
@@ -154,7 +162,26 @@ impl<'a> AetherTabViewer<'a> {
                                     .root_node
                                     .render_editor(ui, &mut self.project_state.selection);
                             });
-                    });
+                    }).response.rect;
+
+                // Handle Ctrl+scroll wheel for zooming
+                let canvas_response = ui.interact(canvas_rect, egui::Id::new("canvas_zoom_pan"), egui::Sense::hover());
+                if canvas_response.hovered() {
+                    let scroll_delta = ui.input(|i| i.raw_scroll_delta);
+                    let modifiers = ui.input(|i| i.modifiers);
+
+                    if modifiers.ctrl && scroll_delta.y != 0.0 {
+                        // Ctrl + scroll = zoom
+                        let zoom_delta = scroll_delta.y * 0.001;
+                        *self.canvas_zoom = (*self.canvas_zoom + zoom_delta).clamp(0.1, 3.0);
+                    }
+                }
+
+                // Handle middle-mouse drag for panning
+                let pan_response = ui.interact(canvas_rect, egui::Id::new("canvas_pan_drag"), egui::Sense::drag());
+                if pan_response.dragged_by(egui::PointerButton::Middle) {
+                    *self.canvas_pan -= pan_response.drag_delta();
+                }
             });
     }
 
@@ -174,7 +201,7 @@ impl<'a> AetherTabViewer<'a> {
             render_widget_category(
                 ui,
                 "Layouts",
-                &["Vertical Layout", "Horizontal Layout", "Grid Layout"],
+                &["Vertical Layout", "Horizontal Layout", "Grid Layout", "Scroll Area", "Tab Container", "Window"],
                 AetherColors::LAYOUT_COLOR,
             );
 
@@ -307,6 +334,16 @@ impl<'a> AetherTabViewer<'a> {
             });
         } else if let Some(id) = self.project_state.selection.iter().next().cloned() {
             let known_vars: Vec<String> = self.project_state.variables.keys().cloned().collect();
+            // Build (name, filename) pairs for asset selection
+            let known_assets: Vec<(String, String)> = self.project_state.assets.assets.values()
+                .map(|asset| {
+                    let filename = asset.path.file_name()
+                        .and_then(|f| f.to_str())
+                        .unwrap_or(&asset.name)
+                        .to_string();
+                    (asset.name.clone(), filename)
+                })
+                .collect();
             let is_root = id == self.project_state.root_node.id();
 
             // Get widget name for header
@@ -360,7 +397,7 @@ impl<'a> AetherTabViewer<'a> {
             // Widget properties
             if let Some(node) = self.project_state.find_node_mut(id) {
                 theme::section_frame(ui.ctx()).show(ui, |ui| {
-                    node.inspect(ui, &known_vars);
+                    node.inspect(ui, &known_vars, &known_assets);
                 });
 
                 // Widget actions (not for root)
@@ -582,6 +619,31 @@ impl<'a> AetherTabViewer<'a> {
                             return;
                         }
 
+                        // Copy assets to assets directory
+                        if !self.project_state.assets.assets.is_empty() {
+                            let assets_dir = folder.join("assets");
+                            if let Err(e) = std::fs::create_dir_all(&assets_dir) {
+                                eprintln!("Failed to create assets directory: {}", e);
+                                return;
+                            }
+
+                            for asset in self.project_state.assets.assets.values() {
+                                let source_path = &asset.path;
+                                if source_path.exists() {
+                                    if let Some(filename) = source_path.file_name() {
+                                        let dest_path = assets_dir.join(filename);
+                                        if let Err(e) = std::fs::copy(source_path, &dest_path) {
+                                            eprintln!("Failed to copy asset '{}': {}", asset.name, e);
+                                        } else {
+                                            println!("  ✓ Copied asset: {}", asset.name);
+                                        }
+                                    }
+                                } else {
+                                    eprintln!("  ⚠ Asset file not found: {}", source_path.display());
+                                }
+                            }
+                        }
+
                         println!(
                             "✓ Project '{}' exported to: {}",
                             self.project_state.project_name,
@@ -735,13 +797,22 @@ impl<'a> AetherTabViewer<'a> {
             ))
             .clicked()
         {
-            // In a full implementation, this would open a file picker
-            // For now, we'll just show a placeholder
-            ui.label(
-                RichText::new("File picker would open here")
-                    .size(11.0)
-                    .color(theme::muted_color(ui.ctx())),
-            );
+            // Open file picker to select an image
+            if let Some(path) = crate::io::pick_file("Images") {
+                // Extract filename as asset name
+                let name = path
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .map(|s| s.to_string())
+                    .unwrap_or_else(|| format!("asset_{}", self.project_state.assets.assets.len()));
+
+                // Add asset to project
+                self.project_state.assets.add_asset(
+                    name,
+                    crate::model::AssetType::Image,
+                    path,
+                );
+            }
         }
 
         ui.add_space(8.0);

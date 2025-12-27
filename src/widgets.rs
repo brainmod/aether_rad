@@ -294,13 +294,16 @@ impl WidgetNode for VerticalLayout {
                     "Spinner" => Box::new(SpinnerWidget::default()),
                     "Hyperlink" => Box::new(HyperlinkWidget::default()),
                     "Color Picker" => Box::new(ColorPickerWidget::default()),
+                    "Scroll Area" => Box::new(ScrollAreaWidget::default()),
+                    "Tab Container" => Box::new(TabContainerWidget::default()),
+                    "Window" => Box::new(WindowWidget::default()),
                     _ => return,
                 };
                 self.children.push(new_widget);
             }
         }
     }
-    fn inspect(&mut self, ui: &mut Ui, _known_variables: &[String]) {
+    fn inspect(&mut self, ui: &mut Ui, _known_variables: &[String], _known_assets: &[(String, String)]) {
         ui.heading("Vertical Layout Settings");
         ui.label(format!("ID: {}", self.id));
         ui.horizontal(|ui| {
@@ -404,6 +407,9 @@ impl WidgetNode for HorizontalLayout {
                             "Spinner" => Box::new(SpinnerWidget::default()),
                             "Hyperlink" => Box::new(HyperlinkWidget::default()),
                             "Color Picker" => Box::new(ColorPickerWidget::default()),
+                            "Scroll Area" => Box::new(ScrollAreaWidget::default()),
+                            "Tab Container" => Box::new(TabContainerWidget::default()),
+                            "Window" => Box::new(WindowWidget::default()),
                             _ => return,
                         };
                         self.children.push(new_widget);
@@ -418,7 +424,7 @@ impl WidgetNode for HorizontalLayout {
         }
     }
 
-    fn inspect(&mut self, ui: &mut Ui, _known_variables: &[String]) {
+    fn inspect(&mut self, ui: &mut Ui, _known_variables: &[String], _known_assets: &[(String, String)]) {
         ui.heading("Horizontal Layout Settings");
         ui.label(format!("ID: {}", self.id));
         ui.horizontal(|ui| {
@@ -530,6 +536,9 @@ impl WidgetNode for GridLayout {
                             "Spinner" => Box::new(SpinnerWidget::default()),
                             "Hyperlink" => Box::new(HyperlinkWidget::default()),
                             "Color Picker" => Box::new(ColorPickerWidget::default()),
+                            "Scroll Area" => Box::new(ScrollAreaWidget::default()),
+                            "Tab Container" => Box::new(TabContainerWidget::default()),
+                            "Window" => Box::new(WindowWidget::default()),
                             _ => return,
                         };
                         self.children.push(new_widget);
@@ -544,7 +553,7 @@ impl WidgetNode for GridLayout {
         }
     }
 
-    fn inspect(&mut self, ui: &mut Ui, _known_variables: &[String]) {
+    fn inspect(&mut self, ui: &mut Ui, _known_variables: &[String], _known_assets: &[(String, String)]) {
         ui.heading("Grid Layout Settings");
         ui.label(format!("ID: {}", self.id));
         ui.horizontal(|ui| {
@@ -655,7 +664,7 @@ impl WidgetNode for ButtonWidget {
 
     // The "Inspectable" pattern: The widget defines its own property UI.
     // [cite: 137]
-    fn inspect(&mut self, ui: &mut Ui, known_variables: &[String]) {
+    fn inspect(&mut self, ui: &mut Ui, known_variables: &[String], _known_assets: &[(String, String)]) {
         ui.heading("Button Properties");
         ui.label(format!("ID: {}", self.id));
 
@@ -707,6 +716,7 @@ impl WidgetNode for ButtonWidget {
         let possible_events = [
             crate::model::WidgetEvent::Clicked,
             crate::model::WidgetEvent::DoubleClicked,
+            crate::model::WidgetEvent::Hovered,
         ];
 
         let mut events_to_add = None;
@@ -758,10 +768,24 @@ impl WidgetNode for ButtonWidget {
             quote! {}
         };
 
+        // Generate code for the hovered event if present
+        let hovered_code = if let Some(action) = self.events.get(&WidgetEvent::Hovered) {
+            let action_code = action.to_code();
+            quote! {
+                if response.hovered() {
+                    #action_code
+                }
+            }
+        } else {
+            quote! {}
+        };
+
         quote! {
-            if ui.button(#label_tokens).clicked() {
+            let response = ui.button(#label_tokens);
+            if response.clicked() {
                 #clicked_code
             }
+            #hovered_code
         }
     }
 }
@@ -815,7 +839,7 @@ impl WidgetNode for LabelWidget {
         response.on_hover_text(format!("Label: {}\nID: {}", self.text, self.id));
     }
 
-    fn inspect(&mut self, ui: &mut Ui, known_variables: &[String]) {
+    fn inspect(&mut self, ui: &mut Ui, known_variables: &[String], _known_assets: &[(String, String)]) {
         ui.heading("Label Properties");
         ui.horizontal(|ui| {
             ui.label("Text:");
@@ -914,7 +938,7 @@ impl WidgetNode for TextEditWidget {
         response.on_hover_text(format!("Text Edit: {}\nID: {}", self.text, self.id));
     }
 
-    fn inspect(&mut self, ui: &mut Ui, known_variables: &[String]) {
+    fn inspect(&mut self, ui: &mut Ui, known_variables: &[String], _known_assets: &[(String, String)]) {
         ui.heading("Text Edit Properties");
         ui.label("Note: Binds to String variables.");
         ui.horizontal(|ui| {
@@ -951,19 +975,27 @@ impl WidgetNode for TextEditWidget {
         let mut events_to_add = None;
         let mut events_to_remove = None;
 
-        let event = crate::model::WidgetEvent::Changed;
-        if self.events.contains_key(&event) {
-            ui.collapsing(format!("{}", event), |ui| {
-                if let Some(action) = self.events.get_mut(&event) {
-                    render_action_editor(ui, action, known_variables);
+        // TextEdit supports Changed, Focused, and LostFocus events
+        let possible_events = [
+            crate::model::WidgetEvent::Changed,
+            crate::model::WidgetEvent::Focused,
+            crate::model::WidgetEvent::LostFocus,
+        ];
+
+        for event in &possible_events {
+            if self.events.contains_key(event) {
+                ui.collapsing(format!("{}", event), |ui| {
+                    if let Some(action) = self.events.get_mut(event) {
+                        render_action_editor(ui, action, known_variables);
+                    }
+                    if ui.button("Remove Event").clicked() {
+                        events_to_remove = Some(*event);
+                    }
+                });
+            } else {
+                if ui.button(format!("+ Add {}", event)).clicked() {
+                    events_to_add = Some(*event);
                 }
-                if ui.button("Remove Event").clicked() {
-                    events_to_remove = Some(event);
-                }
-            });
-        } else {
-            if ui.button(format!("+ Add {}", event)).clicked() {
-                events_to_add = Some(event);
             }
         }
 
@@ -981,15 +1013,42 @@ impl WidgetNode for TextEditWidget {
 
         if let Some(var) = self.bindings.get("value") {
             let ident = quote::format_ident!("{}", var);
+
             let changed_code = if let Some(action) = self.events.get(&WidgetEvent::Changed) {
                 action.to_code()
             } else {
                 quote! {}
             };
+
+            let focused_code = if let Some(action) = self.events.get(&WidgetEvent::Focused) {
+                let action_code = action.to_code();
+                quote! {
+                    if response.gained_focus() {
+                        #action_code
+                    }
+                }
+            } else {
+                quote! {}
+            };
+
+            let lost_focus_code = if let Some(action) = self.events.get(&WidgetEvent::LostFocus) {
+                let action_code = action.to_code();
+                quote! {
+                    if response.lost_focus() {
+                        #action_code
+                    }
+                }
+            } else {
+                quote! {}
+            };
+
             quote! {
-                if ui.text_edit_singleline(&mut self.#ident).changed() {
+                let response = ui.text_edit_singleline(&mut self.#ident);
+                if response.changed() {
                     #changed_code
                 }
+                #focused_code
+                #lost_focus_code
             }
         } else {
             // If not bound, it's just a placeholder or needs local state we don't track well in codegen yet
@@ -1047,7 +1106,7 @@ impl WidgetNode for CheckboxWidget {
         response.on_hover_text(format!("Checkbox: {} ({})\nID: {}", self.label, if self.checked { "✓" } else { "☐" }, self.id));
     }
 
-    fn inspect(&mut self, ui: &mut Ui, known_variables: &[String]) {
+    fn inspect(&mut self, ui: &mut Ui, known_variables: &[String], _known_assets: &[(String, String)]) {
         ui.heading("Checkbox Properties");
         ui.horizontal(|ui| {
             ui.label("Label:");
@@ -1194,7 +1253,7 @@ impl WidgetNode for SliderWidget {
         response.on_hover_text(format!("Slider: {} ({}-{})\nID: {}", self.value, self.min, self.max, self.id));
     }
 
-    fn inspect(&mut self, ui: &mut Ui, known_variables: &[String]) {
+    fn inspect(&mut self, ui: &mut Ui, known_variables: &[String], _known_assets: &[(String, String)]) {
         ui.heading("Slider Properties");
         ui.horizontal(|ui| {
             ui.label("Min:");
@@ -1336,7 +1395,7 @@ impl WidgetNode for ProgressBarWidget {
         response.on_hover_text(format!("Progress Bar: {:.0}%\nID: {}", self.value * 100.0, self.id));
     }
 
-    fn inspect(&mut self, ui: &mut Ui, known_variables: &[String]) {
+    fn inspect(&mut self, ui: &mut Ui, known_variables: &[String], _known_assets: &[(String, String)]) {
         ui.heading("Progress Bar Properties");
         ui.horizontal(|ui| {
             ui.label("Progress (0.0 - 1.0):");
@@ -1391,6 +1450,8 @@ pub struct ComboBoxWidget {
     pub selected: usize,
     #[serde(default)]
     pub bindings: std::collections::HashMap<String, String>,
+    #[serde(default)]
+    pub events: std::collections::HashMap<crate::model::WidgetEvent, crate::model::Action>,
 }
 
 impl Default for ComboBoxWidget {
@@ -1401,6 +1462,7 @@ impl Default for ComboBoxWidget {
             options: vec!["Option 1".to_string(), "Option 2".to_string(), "Option 3".to_string()],
             selected: 0,
             bindings: std::collections::HashMap::new(),
+            events: std::collections::HashMap::new(),
         }
     }
 }
@@ -1449,7 +1511,7 @@ impl WidgetNode for ComboBoxWidget {
         outer_response.response.on_hover_text(format!("ComboBox: {}\nSelected: {}\nID: {}", self.label, selected_text, self.id));
     }
 
-    fn inspect(&mut self, ui: &mut Ui, known_variables: &[String]) {
+    fn inspect(&mut self, ui: &mut Ui, known_variables: &[String], _known_assets: &[(String, String)]) {
         ui.heading("ComboBox Properties");
 
         ui.horizontal(|ui| {
@@ -1510,6 +1572,43 @@ impl WidgetNode for ComboBoxWidget {
                 }
             }
         });
+
+        ui.separator();
+        ui.heading("Events");
+
+        let mut events_to_add = None;
+        let mut events_to_remove = None;
+
+        // ComboBox supports Focused and LostFocus events
+        let possible_events = [
+            crate::model::WidgetEvent::Focused,
+            crate::model::WidgetEvent::LostFocus,
+        ];
+
+        for event in &possible_events {
+            if self.events.contains_key(event) {
+                ui.collapsing(format!("{}", event), |ui| {
+                    if let Some(action) = self.events.get_mut(event) {
+                        render_action_editor(ui, action, known_variables);
+                    }
+                    if ui.button("Remove Event").clicked() {
+                        events_to_remove = Some(*event);
+                    }
+                });
+            } else {
+                if ui.button(format!("+ Add {}", event)).clicked() {
+                    events_to_add = Some(*event);
+                }
+            }
+        }
+
+        if let Some(event) = events_to_add {
+            self.events.insert(event, crate::model::Action::Custom(String::new()));
+        }
+
+        if let Some(event) = events_to_remove {
+            self.events.remove(&event);
+        }
     }
 
     fn codegen(&self) -> proc_macro2::TokenStream {
@@ -1560,6 +1659,14 @@ pub struct ImageWidget {
     pub path: String,
     pub width: Option<f32>,
     pub height: Option<f32>,
+    /// Optional reference to an asset by name (from AssetManager)
+    #[serde(default)]
+    pub asset_name: Option<String>,
+    /// Cached filename from the asset (for codegen)
+    #[serde(default)]
+    pub asset_filename: Option<String>,
+    #[serde(default)]
+    pub events: std::collections::HashMap<crate::model::WidgetEvent, crate::model::Action>,
 }
 
 impl Default for ImageWidget {
@@ -1569,6 +1676,9 @@ impl Default for ImageWidget {
             path: "".to_string(),
             width: Some(100.0),
             height: None, // Maintain aspect ratio
+            asset_name: None,
+            asset_filename: None,
+            events: std::collections::HashMap::new(),
         }
     }
 }
@@ -1665,20 +1775,48 @@ impl WidgetNode for ImageWidget {
         response.on_hover_text(format!("Image{}\nPath: {}\nID: {}", size_info, self.path, self.id));
     }
 
-    fn inspect(&mut self, ui: &mut Ui, _known_variables: &[String]) {
+    fn inspect(&mut self, ui: &mut Ui, _known_variables: &[String], known_assets: &[(String, String)]) {
         ui.heading("Image Properties");
 
-        ui.horizontal(|ui| {
-            ui.label("Path:");
-            ui.text_edit_singleline(&mut self.path);
-        });
+        // Asset selection dropdown
+        if !known_assets.is_empty() {
+            ui.horizontal(|ui| {
+                ui.label("Asset:");
+                let current_asset = self.asset_name.clone().unwrap_or_else(|| "(None)".to_string());
+                egui::ComboBox::from_id_salt("image_asset_select")
+                    .selected_text(&current_asset)
+                    .show_ui(ui, |ui| {
+                        if ui.selectable_label(self.asset_name.is_none(), "(None - use path)").clicked() {
+                            self.asset_name = None;
+                            self.asset_filename = None;
+                        }
+                        for (asset_name, asset_filename) in known_assets {
+                            if ui.selectable_label(self.asset_name.as_ref() == Some(asset_name), asset_name).clicked() {
+                                self.asset_name = Some(asset_name.clone());
+                                self.asset_filename = Some(asset_filename.clone());
+                            }
+                        }
+                    });
+            });
+            ui.add_space(4.0);
+        }
 
-        if ui.button("📁 Browse...").clicked() {
-            if let Some(path) = crate::io::pick_file("Images") {
-                if let Some(path_str) = path.to_str() {
-                    self.path = path_str.to_string();
+        // Manual path entry (shown when no asset is selected)
+        if self.asset_name.is_none() {
+            ui.horizontal(|ui| {
+                ui.label("Path:");
+                ui.text_edit_singleline(&mut self.path);
+            });
+
+            if ui.button("📁 Browse...").clicked() {
+                if let Some(path) = crate::io::pick_file("Images") {
+                    if let Some(path_str) = path.to_str() {
+                        self.path = path_str.to_string();
+                    }
                 }
             }
+        } else {
+            ui.label(format!("Using asset: {}", self.asset_name.as_ref().unwrap()));
         }
 
         ui.separator();
@@ -1704,10 +1842,53 @@ impl WidgetNode for ImageWidget {
                 ui.add(egui::DragValue::new(h).speed(1.0).range(10.0..=1000.0));
             }
         });
+
+        ui.separator();
+        ui.heading("Events");
+
+        // List possible events for Image (Hovered is useful for tooltips, effects)
+        let possible_events = [
+            crate::model::WidgetEvent::Hovered,
+        ];
+
+        let mut events_to_add = None;
+        let mut events_to_remove = None;
+
+        for event in &possible_events {
+            if self.events.contains_key(event) {
+                ui.collapsing(format!("{}", event), |ui| {
+                    if let Some(action) = self.events.get_mut(event) {
+                        render_action_editor(ui, action, &[]);
+                    }
+                    if ui.button("Remove Event").clicked() {
+                        events_to_remove = Some(*event);
+                    }
+                });
+            } else {
+                if ui.button(format!("+ Add {}", event)).clicked() {
+                    events_to_add = Some(*event);
+                }
+            }
+        }
+
+        if let Some(event) = events_to_add {
+            self.events.insert(event, crate::model::Action::Custom(String::new()));
+        }
+
+        if let Some(event) = events_to_remove {
+            self.events.remove(&event);
+        }
     }
 
     fn codegen(&self) -> proc_macro2::TokenStream {
-        let path = &self.path;
+        use crate::model::WidgetEvent;
+
+        // Use asset path if an asset is selected, otherwise use manual path
+        let path = if let Some(ref filename) = self.asset_filename {
+            format!("assets/{}", filename)
+        } else {
+            self.path.clone()
+        };
 
         let size_tokens = match (self.width, self.height) {
             (Some(w), Some(h)) => quote! { .max_size(egui::vec2(#w, #h)) },
@@ -1716,11 +1897,24 @@ impl WidgetNode for ImageWidget {
             (None, None) => quote! {},
         };
 
+        // Generate code for the hovered event if present
+        let hovered_code = if let Some(action) = self.events.get(&WidgetEvent::Hovered) {
+            let action_code = action.to_code();
+            quote! {
+                if response.hovered() {
+                    #action_code
+                }
+            }
+        } else {
+            quote! {}
+        };
+
         quote! {
-            ui.add(
+            let response = ui.add(
                 egui::Image::new(#path)
                     #size_tokens
             );
+            #hovered_code
         }
     }
 }
@@ -1770,7 +1964,7 @@ impl WidgetNode for SeparatorWidget {
         response.on_hover_text(format!("Separator\nID: {}", self.id));
     }
 
-    fn inspect(&mut self, ui: &mut Ui, _known_variables: &[String]) {
+    fn inspect(&mut self, ui: &mut Ui, _known_variables: &[String], _known_assets: &[(String, String)]) {
         ui.heading("Separator");
         ui.label("A visual divider between widgets.");
         ui.label(format!("ID: {}", self.id));
@@ -1826,7 +2020,7 @@ impl WidgetNode for SpinnerWidget {
         response.on_hover_text(format!("Spinner (size: {})\nID: {}", self.size, self.id));
     }
 
-    fn inspect(&mut self, ui: &mut Ui, _known_variables: &[String]) {
+    fn inspect(&mut self, ui: &mut Ui, _known_variables: &[String], _known_assets: &[(String, String)]) {
         ui.heading("Spinner Properties");
         ui.horizontal(|ui| {
             ui.label("Size:");
@@ -1887,7 +2081,7 @@ impl WidgetNode for HyperlinkWidget {
         response.on_hover_text(format!("Hyperlink: {}\nURL: {}\nID: {}", self.text, self.url, self.id));
     }
 
-    fn inspect(&mut self, ui: &mut Ui, _known_variables: &[String]) {
+    fn inspect(&mut self, ui: &mut Ui, _known_variables: &[String], _known_assets: &[(String, String)]) {
         ui.heading("Hyperlink Properties");
         ui.horizontal(|ui| {
             ui.label("Text:");
@@ -1904,6 +2098,610 @@ impl WidgetNode for HyperlinkWidget {
         let text = &self.text;
         let url = &self.url;
         quote! { ui.hyperlink_to(#text, #url); }
+    }
+}
+
+// --- Window Container ---
+/// A window container widget that represents an egui::Window
+#[derive(Debug, Serialize, Deserialize)]
+pub struct WindowWidget {
+    pub id: Uuid,
+    pub title: String,
+    pub children: Vec<Box<dyn WidgetNode>>,
+    pub closeable: bool,
+    pub collapsible: bool,
+    pub resizable: bool,
+    pub default_width: f32,
+    pub default_height: Option<f32>,
+}
+
+impl Default for WindowWidget {
+    fn default() -> Self {
+        Self {
+            id: Uuid::new_v4(),
+            title: "Window".to_string(),
+            children: Vec::new(),
+            closeable: true,
+            collapsible: true,
+            resizable: true,
+            default_width: 300.0,
+            default_height: Some(200.0),
+        }
+    }
+}
+
+#[typetag::serde]
+impl WidgetNode for WindowWidget {
+    fn clone_box(&self) -> Box<dyn WidgetNode> {
+        Box::new(Self {
+            id: self.id,
+            title: self.title.clone(),
+            children: self.children.iter().map(|c| c.clone_box()).collect(),
+            closeable: self.closeable,
+            collapsible: self.collapsible,
+            resizable: self.resizable,
+            default_width: self.default_width,
+            default_height: self.default_height,
+        })
+    }
+
+    fn id(&self) -> Uuid {
+        self.id
+    }
+
+    fn name(&self) -> &str {
+        "Window"
+    }
+
+    fn render_editor(&mut self, ui: &mut Ui, selection: &mut HashSet<Uuid>) {
+        // In the editor, we render the window as a styled frame
+        // since actual egui::Window needs ctx-level access
+        let frame = egui::Frame::new()
+            .fill(ui.style().visuals.window_fill)
+            .stroke(ui.style().visuals.window_stroke)
+            .corner_radius(egui::CornerRadius::same(6))
+            .inner_margin(egui::Margin::same(8));
+
+        let response = frame.show(ui, |ui| {
+            // Window title bar
+            ui.horizontal(|ui| {
+                ui.strong(&self.title);
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if self.closeable {
+                        ui.label("✕");
+                    }
+                    if self.collapsible {
+                        ui.label("−");
+                    }
+                });
+            });
+            ui.separator();
+
+            // Window content
+            for child in &mut self.children {
+                child.render_editor(ui, selection);
+            }
+
+            // Drop zone for adding widgets
+            let (_response, payload_option) =
+                ui.dnd_drop_zone::<String, _>(egui::Frame::NONE, |ui| {
+                    ui.label("Drag widget here to add...");
+                });
+
+            if let Some(payload) = payload_option {
+                if ui.input(|i| i.pointer.any_released()) {
+                    let new_widget: Box<dyn WidgetNode> = match payload.as_str() {
+                        "Button" => Box::new(ButtonWidget::default()),
+                        "Label" => Box::new(LabelWidget::default()),
+                        "Text Edit" => Box::new(TextEditWidget::default()),
+                        "Checkbox" => Box::new(CheckboxWidget::default()),
+                        "Slider" => Box::new(SliderWidget::default()),
+                        "Progress Bar" => Box::new(ProgressBarWidget::default()),
+                        "ComboBox" => Box::new(ComboBoxWidget::default()),
+                        "Image" => Box::new(ImageWidget::default()),
+                        "Vertical Layout" => Box::new(VerticalLayout::default()),
+                        "Horizontal Layout" => Box::new(HorizontalLayout::default()),
+                        "Grid Layout" => Box::new(GridLayout::default()),
+                        "Separator" => Box::new(SeparatorWidget::default()),
+                        "Spinner" => Box::new(SpinnerWidget::default()),
+                        "Hyperlink" => Box::new(HyperlinkWidget::default()),
+                        "Color Picker" => Box::new(ColorPickerWidget::default()),
+                        "Scroll Area" => Box::new(ScrollAreaWidget::default()),
+                        "Tab Container" => Box::new(TabContainerWidget::default()),
+                        "Window" => Box::new(WindowWidget::default()),
+                        _ => return,
+                    };
+                    self.children.push(new_widget);
+                }
+            }
+        }).response;
+
+        // Make the window container selectable
+        let container_response = response.interact(egui::Sense::click());
+        handle_selection(ui, self.id, container_response.clicked(), selection);
+
+        if selection.contains(&self.id) {
+            draw_gizmo(ui, response.rect);
+        }
+    }
+
+    fn inspect(&mut self, ui: &mut Ui, _known_variables: &[String], _known_assets: &[(String, String)]) {
+        ui.heading("Window Properties");
+        ui.label(format!("ID: {}", self.id));
+
+        ui.separator();
+
+        ui.horizontal(|ui| {
+            ui.label("Title:");
+            ui.text_edit_singleline(&mut self.title);
+        });
+
+        ui.separator();
+        ui.label("Window Options:");
+
+        ui.checkbox(&mut self.closeable, "Closeable");
+        ui.checkbox(&mut self.collapsible, "Collapsible");
+        ui.checkbox(&mut self.resizable, "Resizable");
+
+        ui.separator();
+        ui.label("Size:");
+
+        ui.horizontal(|ui| {
+            ui.label("Default Width:");
+            ui.add(egui::DragValue::new(&mut self.default_width).speed(1.0).range(100.0..=1000.0));
+        });
+
+        ui.horizontal(|ui| {
+            ui.label("Default Height:");
+            let mut has_height = self.default_height.is_some();
+            if ui.checkbox(&mut has_height, "").changed() {
+                self.default_height = if has_height { Some(200.0) } else { None };
+            }
+            if let Some(ref mut h) = self.default_height {
+                ui.add(egui::DragValue::new(h).speed(1.0).range(50.0..=1000.0));
+            }
+        });
+
+        ui.label(format!("Children count: {}", self.children.len()));
+    }
+
+    fn codegen(&self) -> proc_macro2::TokenStream {
+        let title = &self.title;
+        let child_streams: Vec<_> = self.children.iter().map(|c| c.codegen()).collect();
+
+        // Generate a state variable name from the window title
+        let state_var = quote::format_ident!("window_{}_open", self.id.to_string().replace("-", "_"));
+
+        let collapsible = self.collapsible;
+        let resizable = self.resizable;
+        let default_width = self.default_width;
+
+        let height_token = if let Some(h) = self.default_height {
+            quote! { .default_height(#h) }
+        } else {
+            quote! {}
+        };
+
+        // Note: The window state variable needs to be added to the app struct
+        // This codegen assumes the app will have `window_XXX_open: bool` field
+        quote! {
+            egui::Window::new(#title)
+                .open(&mut self.#state_var)
+                .collapsible(#collapsible)
+                .resizable(#resizable)
+                .default_width(#default_width)
+                #height_token
+                .show(ctx, |ui| {
+                    #(#child_streams)*
+                });
+        }
+    }
+
+    fn children(&self) -> Option<&Vec<Box<dyn WidgetNode>>> {
+        Some(&self.children)
+    }
+
+    fn children_mut(&mut self) -> Option<&mut Vec<Box<dyn WidgetNode>>> {
+        Some(&mut self.children)
+    }
+}
+
+// --- TabContainer ---
+/// A tabbed container for organizing content
+#[derive(Debug, Serialize, Deserialize)]
+pub struct TabContainerWidget {
+    pub id: Uuid,
+    pub tabs: Vec<TabItem>,
+    pub selected_tab: usize,
+}
+
+/// A single tab with a name and children
+#[derive(Debug, Serialize, Deserialize)]
+pub struct TabItem {
+    pub name: String,
+    pub children: Vec<Box<dyn WidgetNode>>,
+}
+
+impl Clone for TabItem {
+    fn clone(&self) -> Self {
+        Self {
+            name: self.name.clone(),
+            children: self.children.iter().map(|c| c.clone_box()).collect(),
+        }
+    }
+}
+
+impl Default for TabContainerWidget {
+    fn default() -> Self {
+        Self {
+            id: Uuid::new_v4(),
+            tabs: vec![
+                TabItem {
+                    name: "Tab 1".to_string(),
+                    children: Vec::new(),
+                },
+                TabItem {
+                    name: "Tab 2".to_string(),
+                    children: Vec::new(),
+                },
+            ],
+            selected_tab: 0,
+        }
+    }
+}
+
+#[typetag::serde]
+impl WidgetNode for TabContainerWidget {
+    fn clone_box(&self) -> Box<dyn WidgetNode> {
+        Box::new(Self {
+            id: self.id,
+            tabs: self.tabs.clone(),
+            selected_tab: self.selected_tab,
+        })
+    }
+
+    fn id(&self) -> Uuid {
+        self.id
+    }
+
+    fn name(&self) -> &str {
+        "Tab Container"
+    }
+
+    fn render_editor(&mut self, ui: &mut Ui, selection: &mut HashSet<Uuid>) {
+        let response = ui.vertical(|ui| {
+            // Tab bar
+            ui.horizontal(|ui| {
+                for (idx, tab) in self.tabs.iter().enumerate() {
+                    let is_selected = idx == self.selected_tab;
+                    let text = if is_selected {
+                        egui::RichText::new(&tab.name).strong()
+                    } else {
+                        egui::RichText::new(&tab.name)
+                    };
+                    if ui.selectable_label(is_selected, text).clicked() {
+                        self.selected_tab = idx;
+                    }
+                }
+            });
+
+            ui.separator();
+
+            // Tab content
+            if let Some(tab) = self.tabs.get_mut(self.selected_tab) {
+                for child in &mut tab.children {
+                    child.render_editor(ui, selection);
+                }
+
+                // Drop zone for adding widgets
+                let (_response, payload_option) =
+                    ui.dnd_drop_zone::<String, _>(egui::Frame::NONE, |ui| {
+                        ui.label("Drag widget here to add...");
+                    });
+
+                if let Some(payload) = payload_option {
+                    if ui.input(|i| i.pointer.any_released()) {
+                        let new_widget: Box<dyn WidgetNode> = match payload.as_str() {
+                            "Button" => Box::new(ButtonWidget::default()),
+                            "Label" => Box::new(LabelWidget::default()),
+                            "Text Edit" => Box::new(TextEditWidget::default()),
+                            "Checkbox" => Box::new(CheckboxWidget::default()),
+                            "Slider" => Box::new(SliderWidget::default()),
+                            "Progress Bar" => Box::new(ProgressBarWidget::default()),
+                            "ComboBox" => Box::new(ComboBoxWidget::default()),
+                            "Image" => Box::new(ImageWidget::default()),
+                            "Vertical Layout" => Box::new(VerticalLayout::default()),
+                            "Horizontal Layout" => Box::new(HorizontalLayout::default()),
+                            "Grid Layout" => Box::new(GridLayout::default()),
+                            "Separator" => Box::new(SeparatorWidget::default()),
+                            "Spinner" => Box::new(SpinnerWidget::default()),
+                            "Hyperlink" => Box::new(HyperlinkWidget::default()),
+                            "Color Picker" => Box::new(ColorPickerWidget::default()),
+                            "Scroll Area" => Box::new(ScrollAreaWidget::default()),
+                            "Tab Container" => Box::new(TabContainerWidget::default()),
+                            "Window" => Box::new(WindowWidget::default()),
+                            _ => return,
+                        };
+                        tab.children.push(new_widget);
+                    }
+                }
+            }
+        }).response;
+
+        // Make the tab container selectable
+        let container_response = response.interact(egui::Sense::click());
+        handle_selection(ui, self.id, container_response.clicked(), selection);
+
+        if selection.contains(&self.id) {
+            draw_gizmo(ui, response.rect);
+        }
+    }
+
+    fn inspect(&mut self, ui: &mut Ui, _known_variables: &[String], _known_assets: &[(String, String)]) {
+        ui.heading("Tab Container Settings");
+        ui.label(format!("ID: {}", self.id));
+
+        ui.separator();
+        ui.label("Tabs:");
+
+        let mut tab_to_remove = None;
+        let mut new_selected_tab = None;
+        let tab_count = self.tabs.len();
+
+        for idx in 0..self.tabs.len() {
+            let is_selected = idx == self.selected_tab;
+
+            ui.horizontal(|ui| {
+                if ui.selectable_label(is_selected, "").clicked() {
+                    new_selected_tab = Some(idx);
+                }
+
+                ui.text_edit_singleline(&mut self.tabs[idx].name);
+
+                if ui.button("🗑").clicked() && tab_count > 1 {
+                    tab_to_remove = Some(idx);
+                }
+            });
+        }
+
+        if let Some(idx) = new_selected_tab {
+            self.selected_tab = idx;
+        }
+
+        if let Some(idx) = tab_to_remove {
+            self.tabs.remove(idx);
+            if self.selected_tab >= self.tabs.len() {
+                self.selected_tab = self.tabs.len().saturating_sub(1);
+            }
+        }
+
+        if ui.button("+ Add Tab").clicked() {
+            self.tabs.push(TabItem {
+                name: format!("Tab {}", self.tabs.len() + 1),
+                children: Vec::new(),
+            });
+        }
+
+        if let Some(tab) = self.tabs.get(self.selected_tab) {
+            ui.label(format!("Children in '{}': {}", tab.name, tab.children.len()));
+        }
+    }
+
+    fn codegen(&self) -> proc_macro2::TokenStream {
+        let tab_count = self.tabs.len();
+
+        let tab_names: Vec<_> = self.tabs.iter().map(|t| &t.name).collect();
+        let tab_contents: Vec<_> = self.tabs.iter().map(|tab| {
+            let child_streams: Vec<_> = tab.children.iter().map(|c| c.codegen()).collect();
+            quote! {
+                #(#child_streams)*
+            }
+        }).collect();
+
+        let tab_indices: Vec<_> = (0..tab_count).collect();
+
+        quote! {
+            ui.horizontal(|ui| {
+                #(
+                    if ui.selectable_label(self.selected_tab == #tab_indices, #tab_names).clicked() {
+                        self.selected_tab = #tab_indices;
+                    }
+                )*
+            });
+            ui.separator();
+            match self.selected_tab {
+                #(
+                    #tab_indices => {
+                        #tab_contents
+                    }
+                )*
+                _ => {}
+            }
+        }
+    }
+
+    fn children(&self) -> Option<&Vec<Box<dyn WidgetNode>>> {
+        // Return children of the currently selected tab
+        self.tabs.get(self.selected_tab).map(|tab| &tab.children)
+    }
+
+    fn children_mut(&mut self) -> Option<&mut Vec<Box<dyn WidgetNode>>> {
+        // Return children of the currently selected tab
+        self.tabs.get_mut(self.selected_tab).map(|tab| &mut tab.children)
+    }
+}
+
+// --- ScrollArea ---
+/// A scrollable container widget
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ScrollAreaWidget {
+    pub id: Uuid,
+    pub children: Vec<Box<dyn WidgetNode>>,
+    pub scroll_horizontal: bool,
+    pub scroll_vertical: bool,
+    pub max_height: Option<f32>,
+    pub max_width: Option<f32>,
+}
+
+impl Default for ScrollAreaWidget {
+    fn default() -> Self {
+        Self {
+            id: Uuid::new_v4(),
+            children: Vec::new(),
+            scroll_horizontal: false,
+            scroll_vertical: true,
+            max_height: Some(200.0),
+            max_width: None,
+        }
+    }
+}
+
+#[typetag::serde]
+impl WidgetNode for ScrollAreaWidget {
+    fn clone_box(&self) -> Box<dyn WidgetNode> {
+        Box::new(Self {
+            id: self.id,
+            children: self.children.iter().map(|c| c.clone_box()).collect(),
+            scroll_horizontal: self.scroll_horizontal,
+            scroll_vertical: self.scroll_vertical,
+            max_height: self.max_height,
+            max_width: self.max_width,
+        })
+    }
+
+    fn id(&self) -> Uuid {
+        self.id
+    }
+
+    fn name(&self) -> &str {
+        "Scroll Area"
+    }
+
+    fn render_editor(&mut self, ui: &mut Ui, selection: &mut HashSet<Uuid>) {
+        let scroll_area = egui::ScrollArea::new([self.scroll_horizontal, self.scroll_vertical])
+            .max_height(self.max_height.unwrap_or(f32::INFINITY))
+            .max_width(self.max_width.unwrap_or(f32::INFINITY));
+
+        let response = scroll_area
+            .show(ui, |ui| {
+                for child in &mut self.children {
+                    child.render_editor(ui, selection);
+                }
+
+                // Drop Zone for adding widgets
+                let (_response, payload_option) =
+                    ui.dnd_drop_zone::<String, _>(egui::Frame::NONE, |ui| {
+                        ui.label("Drag widget here to add...");
+                    });
+
+                if let Some(payload) = payload_option {
+                    if ui.input(|i| i.pointer.any_released()) {
+                        let new_widget: Box<dyn WidgetNode> = match payload.as_str() {
+                            "Button" => Box::new(ButtonWidget::default()),
+                            "Label" => Box::new(LabelWidget::default()),
+                            "Text Edit" => Box::new(TextEditWidget::default()),
+                            "Checkbox" => Box::new(CheckboxWidget::default()),
+                            "Slider" => Box::new(SliderWidget::default()),
+                            "Progress Bar" => Box::new(ProgressBarWidget::default()),
+                            "ComboBox" => Box::new(ComboBoxWidget::default()),
+                            "Image" => Box::new(ImageWidget::default()),
+                            "Vertical Layout" => Box::new(VerticalLayout::default()),
+                            "Horizontal Layout" => Box::new(HorizontalLayout::default()),
+                            "Grid Layout" => Box::new(GridLayout::default()),
+                            "Separator" => Box::new(SeparatorWidget::default()),
+                            "Spinner" => Box::new(SpinnerWidget::default()),
+                            "Hyperlink" => Box::new(HyperlinkWidget::default()),
+                            "Color Picker" => Box::new(ColorPickerWidget::default()),
+                            "Scroll Area" => Box::new(ScrollAreaWidget::default()),
+                            "Tab Container" => Box::new(TabContainerWidget::default()),
+                            "Window" => Box::new(WindowWidget::default()),
+                            _ => return,
+                        };
+                        self.children.push(new_widget);
+                    }
+                }
+            })
+            .inner_rect;
+
+        // Make the scroll area selectable
+        let scroll_response = ui.interact(response, egui::Id::new(self.id), egui::Sense::click());
+        handle_selection(ui, self.id, scroll_response.clicked(), selection);
+
+        if selection.contains(&self.id) {
+            draw_gizmo(ui, response);
+        }
+    }
+
+    fn inspect(&mut self, ui: &mut Ui, _known_variables: &[String], _known_assets: &[(String, String)]) {
+        ui.heading("Scroll Area Settings");
+        ui.label(format!("ID: {}", self.id));
+
+        ui.separator();
+
+        ui.checkbox(&mut self.scroll_horizontal, "Horizontal Scroll");
+        ui.checkbox(&mut self.scroll_vertical, "Vertical Scroll");
+
+        ui.separator();
+
+        ui.horizontal(|ui| {
+            ui.label("Max Height:");
+            let mut has_max_height = self.max_height.is_some();
+            if ui.checkbox(&mut has_max_height, "").changed() {
+                self.max_height = if has_max_height { Some(200.0) } else { None };
+            }
+            if let Some(ref mut h) = self.max_height {
+                ui.add(egui::DragValue::new(h).speed(1.0).range(50.0..=1000.0));
+            }
+        });
+
+        ui.horizontal(|ui| {
+            ui.label("Max Width:");
+            let mut has_max_width = self.max_width.is_some();
+            if ui.checkbox(&mut has_max_width, "").changed() {
+                self.max_width = if has_max_width { Some(300.0) } else { None };
+            }
+            if let Some(ref mut w) = self.max_width {
+                ui.add(egui::DragValue::new(w).speed(1.0).range(50.0..=1000.0));
+            }
+        });
+
+        ui.label(format!("Children count: {}", self.children.len()));
+    }
+
+    fn codegen(&self) -> proc_macro2::TokenStream {
+        let child_streams: Vec<_> = self.children.iter().map(|c| c.codegen()).collect();
+
+        let h_scroll = self.scroll_horizontal;
+        let v_scroll = self.scroll_vertical;
+
+        let max_height_token = if let Some(h) = self.max_height {
+            quote! { .max_height(#h) }
+        } else {
+            quote! {}
+        };
+
+        let max_width_token = if let Some(w) = self.max_width {
+            quote! { .max_width(#w) }
+        } else {
+            quote! {}
+        };
+
+        quote! {
+            egui::ScrollArea::new([#h_scroll, #v_scroll])
+                #max_height_token
+                #max_width_token
+                .show(ui, |ui| {
+                    #(#child_streams)*
+                });
+        }
+    }
+
+    fn children(&self) -> Option<&Vec<Box<dyn WidgetNode>>> {
+        Some(&self.children)
+    }
+
+    fn children_mut(&mut self) -> Option<&mut Vec<Box<dyn WidgetNode>>> {
+        Some(&mut self.children)
     }
 }
 
@@ -1961,7 +2759,7 @@ impl WidgetNode for ColorPickerWidget {
         response.on_hover_text(format!("Color: {}\nID: {}", hex, self.id));
     }
 
-    fn inspect(&mut self, ui: &mut Ui, known_variables: &[String]) {
+    fn inspect(&mut self, ui: &mut Ui, known_variables: &[String], _known_assets: &[(String, String)]) {
         ui.heading("Color Picker Properties");
         ui.label(format!("ID: {}", self.id));
 

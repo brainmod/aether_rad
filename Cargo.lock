@@ -121,6 +121,7 @@ dependencies = [
  "eframe",
  "egui",
  "egui_dock",
+ "js-sys",
  "prettyplease",
  "proc-macro2",
  "quote",
@@ -132,6 +133,7 @@ dependencies = [
  "typetag",
  "uuid",
  "wasm-bindgen",
+ "wasm-bindgen-futures",
  "web-sys",
 ]
 

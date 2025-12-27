@@ -113,6 +113,8 @@ pub enum WidgetEvent {
     Changed,
     Hovered,
     DoubleClicked,
+    Focused,
+    LostFocus,
 }
 
 impl std::fmt::Display for WidgetEvent {
@@ -125,6 +127,8 @@ impl std::fmt::Display for WidgetEvent {
                 Self::Changed => "On Change",
                 Self::Hovered => "On Hover",
                 Self::DoubleClicked => "On Double Click",
+                Self::Focused => "On Focus",
+                Self::LostFocus => "On Blur",
             }
         )
     }
@@ -190,7 +194,8 @@ pub trait WidgetNode: std::fmt::Debug {
     /// Distinct behavior 2: Property Introspection
     /// How the widget exposes configurable fields to the Inspector.
     /// [cite: 51, 134]
-    fn inspect(&mut self, ui: &mut Ui, known_variables: &[String]);
+    /// known_assets: Vec of (asset_name, filename) pairs
+    fn inspect(&mut self, ui: &mut Ui, known_variables: &[String], known_assets: &[(String, String)]);
 
     /// Distinct behavior 3: Code Generation
     /// Synthesizes the Rust code required to instantiate this widget.

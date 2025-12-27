@@ -1,5 +1,5 @@
 use aether_rad::model::{ProjectState, Variable, VariableType, WidgetEvent, Action};
-use aether_rad::widgets::{ButtonWidget, LabelWidget, VerticalLayout};
+use aether_rad::widgets::{ButtonWidget, LabelWidget, VerticalLayout, HorizontalLayout, GridLayout, CheckboxWidget, SliderWidget};
 use aether_rad::compiler::Compiler;
 
 #[test]
@@ -264,4 +264,295 @@ fn test_variable_management() {
     let message = loaded.variables.get("message").unwrap();
     assert_eq!(message.value, "Hello");
     assert!(matches!(message.v_type, VariableType::String));
+}
+
+#[test]
+fn test_deeply_nested_widget_structure() {
+    // Create a deeply nested structure:
+    // VerticalLayout -> HorizontalLayout -> GridLayout -> Button/Label/Checkbox
+
+    // Create innermost widgets for the grid
+    let button = ButtonWidget {
+        id: uuid::Uuid::new_v4(),
+        text: "Nested Button".to_string(),
+        events: std::collections::HashMap::new(),
+        bindings: std::collections::HashMap::new(),
+    };
+
+    let label = LabelWidget {
+        id: uuid::Uuid::new_v4(),
+        text: "Nested Label".to_string(),
+        bindings: std::collections::HashMap::new(),
+    };
+
+    let checkbox = CheckboxWidget {
+        id: uuid::Uuid::new_v4(),
+        label: "Nested Checkbox".to_string(),
+        checked: false,
+        bindings: std::collections::HashMap::new(),
+        events: std::collections::HashMap::new(),
+    };
+
+    let slider = SliderWidget {
+        id: uuid::Uuid::new_v4(),
+        min: 0.0,
+        max: 100.0,
+        value: 50.0,
+        bindings: std::collections::HashMap::new(),
+        events: std::collections::HashMap::new(),
+    };
+
+    // Create Grid containing the widgets
+    let mut grid = GridLayout {
+        id: uuid::Uuid::new_v4(),
+        children: Vec::new(),
+        columns: 2,
+        spacing: 8.0,
+    };
+    grid.children.push(Box::new(button));
+    grid.children.push(Box::new(label));
+    grid.children.push(Box::new(checkbox));
+    grid.children.push(Box::new(slider));
+
+    // Create Horizontal containing the Grid
+    let mut horizontal = HorizontalLayout {
+        id: uuid::Uuid::new_v4(),
+        children: Vec::new(),
+        spacing: 10.0,
+    };
+    horizontal.children.push(Box::new(grid));
+
+    // Add another widget beside the grid in horizontal
+    horizontal.children.push(Box::new(LabelWidget {
+        id: uuid::Uuid::new_v4(),
+        text: "Sibling Label".to_string(),
+        bindings: std::collections::HashMap::new(),
+    }));
+
+    // Create Vertical (root) containing the Horizontal
+    let mut vertical = VerticalLayout::default();
+    vertical.children.push(Box::new(horizontal));
+
+    // Add a top-level widget too
+    vertical.children.push(Box::new(ButtonWidget {
+        id: uuid::Uuid::new_v4(),
+        text: "Top Level Button".to_string(),
+        events: std::collections::HashMap::new(),
+        bindings: std::collections::HashMap::new(),
+    }));
+
+    // Create project with nested structure
+    let project = ProjectState::new(Box::new(vertical));
+
+    // Verify structure before serialization
+    assert_eq!(project.root_node.name(), "Vertical Layout");
+    assert_eq!(project.root_node.children().unwrap().len(), 2);
+
+    // Get the horizontal layout
+    let horizontal_ref = project.root_node.children().unwrap().get(0).unwrap();
+    assert_eq!(horizontal_ref.name(), "Horizontal Layout");
+    assert_eq!(horizontal_ref.children().unwrap().len(), 2);
+
+    // Get the grid layout
+    let grid_ref = horizontal_ref.children().unwrap().get(0).unwrap();
+    assert_eq!(grid_ref.name(), "Grid Layout");
+    assert_eq!(grid_ref.children().unwrap().len(), 4);
+
+    // Serialize and deserialize
+    let json = serde_json::to_string(&project).expect("Failed to serialize nested structure");
+    let loaded: ProjectState = serde_json::from_str(&json).expect("Failed to deserialize nested structure");
+
+    // Verify structure after deserialization
+    assert_eq!(loaded.root_node.name(), "Vertical Layout");
+    assert_eq!(loaded.root_node.children().unwrap().len(), 2);
+
+    let loaded_horizontal = loaded.root_node.children().unwrap().get(0).unwrap();
+    assert_eq!(loaded_horizontal.name(), "Horizontal Layout");
+    assert_eq!(loaded_horizontal.children().unwrap().len(), 2);
+
+    let loaded_grid = loaded_horizontal.children().unwrap().get(0).unwrap();
+    assert_eq!(loaded_grid.name(), "Grid Layout");
+    assert_eq!(loaded_grid.children().unwrap().len(), 4);
+
+    // Verify the grid children types
+    let grid_children = loaded_grid.children().unwrap();
+    assert_eq!(grid_children[0].name(), "Button");
+    assert_eq!(grid_children[1].name(), "Label");
+    assert_eq!(grid_children[2].name(), "Checkbox");
+    assert_eq!(grid_children[3].name(), "Slider");
+}
+
+#[test]
+fn test_nested_codegen_produces_valid_code() {
+    // Create nested structure
+    let mut grid = GridLayout {
+        id: uuid::Uuid::new_v4(),
+        children: Vec::new(),
+        columns: 2,
+        spacing: 8.0,
+    };
+    grid.children.push(Box::new(ButtonWidget::default()));
+    grid.children.push(Box::new(LabelWidget::default()));
+
+    let mut horizontal = HorizontalLayout {
+        id: uuid::Uuid::new_v4(),
+        children: Vec::new(),
+        spacing: 10.0,
+    };
+    horizontal.children.push(Box::new(grid));
+
+    let mut vertical = VerticalLayout::default();
+    vertical.children.push(Box::new(horizontal));
+
+    let mut project = ProjectState::new(Box::new(vertical));
+    project.project_name = "nested_test".to_string();
+
+    // Generate code
+    let app_rs = Compiler::generate_app_rs(&project);
+
+    // Verify nested structure is present in generated code
+    // GridLayout generates nested vertical/horizontal layouts, not egui::Grid
+    assert!(app_rs.contains("ui.vertical"), "Should contain vertical layout");
+    assert!(app_rs.contains("ui.horizontal"), "Should contain horizontal layout");
+    // The button generates an egui button widget
+    assert!(app_rs.contains("ui.button") || app_rs.contains(".clicked()"), "Should contain button interaction");
+}
+
+#[test]
+fn test_three_level_nesting_serialization() {
+    // Create a three-level nesting: Vertical -> Horizontal -> Vertical -> Button
+    let button = ButtonWidget {
+        id: uuid::Uuid::new_v4(),
+        text: "Deep Button".to_string(),
+        events: std::collections::HashMap::new(),
+        bindings: std::collections::HashMap::new(),
+    };
+
+    let mut inner_vertical = VerticalLayout::default();
+    inner_vertical.children.push(Box::new(button));
+
+    let mut horizontal = HorizontalLayout {
+        id: uuid::Uuid::new_v4(),
+        children: Vec::new(),
+        spacing: 10.0,
+    };
+    horizontal.children.push(Box::new(inner_vertical));
+
+    let mut outer_vertical = VerticalLayout::default();
+    outer_vertical.children.push(Box::new(horizontal));
+
+    let project = ProjectState::new(Box::new(outer_vertical));
+
+    // Serialize
+    let json = serde_json::to_string(&project).expect("Failed to serialize");
+
+    // Deserialize
+    let loaded: ProjectState = serde_json::from_str(&json).expect("Failed to deserialize");
+
+    // Navigate to the deeply nested button
+    let loaded_horizontal = loaded.root_node.children().unwrap().get(0).unwrap();
+    let loaded_inner_vertical = loaded_horizontal.children().unwrap().get(0).unwrap();
+    let loaded_button = loaded_inner_vertical.children().unwrap().get(0).unwrap();
+
+    assert_eq!(loaded_button.name(), "Button");
+}
+
+#[test]
+fn test_codegen_compiles_successfully() {
+    use std::fs;
+    use std::process::Command;
+
+    // Create a project with various widgets
+    let mut root = VerticalLayout::default();
+
+    // Add various widgets
+    root.children.push(Box::new(LabelWidget {
+        id: uuid::Uuid::new_v4(),
+        text: "Hello World".to_string(),
+        bindings: std::collections::HashMap::new(),
+    }));
+
+    root.children.push(Box::new(ButtonWidget {
+        id: uuid::Uuid::new_v4(),
+        text: "Click Me".to_string(),
+        events: std::collections::HashMap::new(),
+        bindings: std::collections::HashMap::new(),
+    }));
+
+    root.children.push(Box::new(CheckboxWidget {
+        id: uuid::Uuid::new_v4(),
+        label: "Enable feature".to_string(),
+        checked: false,
+        bindings: std::collections::HashMap::new(),
+        events: std::collections::HashMap::new(),
+    }));
+
+    root.children.push(Box::new(SliderWidget {
+        id: uuid::Uuid::new_v4(),
+        min: 0.0,
+        max: 100.0,
+        value: 50.0,
+        bindings: std::collections::HashMap::new(),
+        events: std::collections::HashMap::new(),
+    }));
+
+    // Add a nested horizontal layout
+    let mut horizontal = HorizontalLayout {
+        id: uuid::Uuid::new_v4(),
+        children: Vec::new(),
+        spacing: 10.0,
+    };
+    horizontal.children.push(Box::new(LabelWidget {
+        id: uuid::Uuid::new_v4(),
+        text: "Left".to_string(),
+        bindings: std::collections::HashMap::new(),
+    }));
+    horizontal.children.push(Box::new(LabelWidget {
+        id: uuid::Uuid::new_v4(),
+        text: "Right".to_string(),
+        bindings: std::collections::HashMap::new(),
+    }));
+    root.children.push(Box::new(horizontal));
+
+    let mut project = ProjectState::new(Box::new(root));
+    project.project_name = "codegen_test_project".to_string();
+
+    // Generate code
+    let app_rs = Compiler::generate_app_rs(&project);
+    let main_rs = Compiler::generate_main_rs();
+    let cargo_toml = Compiler::generate_cargo_toml(&project.project_name);
+
+    // Create temp directory
+    let temp_dir = std::env::temp_dir().join("aether_rad_codegen_test");
+    let src_dir = temp_dir.join("src");
+
+    // Clean up any previous test run
+    let _ = fs::remove_dir_all(&temp_dir);
+
+    // Create directories
+    fs::create_dir_all(&src_dir).expect("Failed to create temp src directory");
+
+    // Write files
+    fs::write(temp_dir.join("Cargo.toml"), cargo_toml).expect("Failed to write Cargo.toml");
+    fs::write(src_dir.join("main.rs"), main_rs).expect("Failed to write main.rs");
+    fs::write(src_dir.join("app.rs"), app_rs).expect("Failed to write app.rs");
+
+    // Run cargo check
+    let output = Command::new("cargo")
+        .arg("check")
+        .current_dir(&temp_dir)
+        .output()
+        .expect("Failed to run cargo check");
+
+    // Print stderr for debugging if check fails
+    if !output.status.success() {
+        eprintln!("cargo check stderr:\n{}", String::from_utf8_lossy(&output.stderr));
+        eprintln!("cargo check stdout:\n{}", String::from_utf8_lossy(&output.stdout));
+    }
+
+    // Clean up
+    let _ = fs::remove_dir_all(&temp_dir);
+
+    // Assert success
+    assert!(output.status.success(), "Generated code should compile successfully");
 }
