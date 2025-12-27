@@ -145,6 +145,9 @@ impl WidgetNode for VerticalLayout {
                     "Vertical Layout" => Box::new(VerticalLayout::default()),
                     "Horizontal Layout" => Box::new(HorizontalLayout::default()),
                     "Grid Layout" => Box::new(GridLayout::default()),
+                    "Separator" => Box::new(SeparatorWidget::default()),
+                    "Spinner" => Box::new(SpinnerWidget::default()),
+                    "Hyperlink" => Box::new(HyperlinkWidget::default()),
                     _ => return,
                 };
                 self.children.push(new_widget);
@@ -251,6 +254,9 @@ impl WidgetNode for HorizontalLayout {
                             "Vertical Layout" => Box::new(VerticalLayout::default()),
                             "Horizontal Layout" => Box::new(HorizontalLayout::default()),
                             "Grid Layout" => Box::new(GridLayout::default()),
+                            "Separator" => Box::new(SeparatorWidget::default()),
+                            "Spinner" => Box::new(SpinnerWidget::default()),
+                            "Hyperlink" => Box::new(HyperlinkWidget::default()),
                             _ => return,
                         };
                         self.children.push(new_widget);
@@ -373,6 +379,9 @@ impl WidgetNode for GridLayout {
                             "Vertical Layout" => Box::new(VerticalLayout::default()),
                             "Horizontal Layout" => Box::new(HorizontalLayout::default()),
                             "Grid Layout" => Box::new(GridLayout::default()),
+                            "Separator" => Box::new(SeparatorWidget::default()),
+                            "Spinner" => Box::new(SpinnerWidget::default()),
+                            "Hyperlink" => Box::new(HyperlinkWidget::default()),
                             _ => return,
                         };
                         self.children.push(new_widget);
@@ -1430,5 +1439,193 @@ impl WidgetNode for ImageWidget {
                     #size_tokens
             );
         }
+    }
+}
+
+// === NEW SIMPLE WIDGETS ===
+
+// --- Separator ---
+/// A visual separator line for layouts
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct SeparatorWidget {
+    pub id: Uuid,
+}
+
+impl Default for SeparatorWidget {
+    fn default() -> Self {
+        Self {
+            id: Uuid::new_v4(),
+        }
+    }
+}
+
+#[typetag::serde]
+impl WidgetNode for SeparatorWidget {
+    fn clone_box(&self) -> Box<dyn WidgetNode> {
+        Box::new(self.clone())
+    }
+
+    fn id(&self) -> Uuid {
+        self.id
+    }
+
+    fn name(&self) -> &str {
+        "Separator"
+    }
+
+    fn render_editor(&mut self, ui: &mut Ui, selection: &mut HashSet<Uuid>) {
+        let response = ui.separator();
+        let response = response.interact(egui::Sense::click());
+
+        if response.clicked() {
+            selection.clear();
+            selection.insert(self.id);
+        }
+
+        if selection.contains(&self.id) {
+            draw_gizmo(ui, response.rect);
+        }
+
+        response.on_hover_text(format!("Separator\nID: {}", self.id));
+    }
+
+    fn inspect(&mut self, ui: &mut Ui, _known_variables: &[String]) {
+        ui.heading("Separator");
+        ui.label("A visual divider between widgets.");
+        ui.label(format!("ID: {}", self.id));
+    }
+
+    fn codegen(&self) -> proc_macro2::TokenStream {
+        quote! { ui.separator(); }
+    }
+}
+
+// --- Spinner ---
+/// A loading spinner indicator
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct SpinnerWidget {
+    pub id: Uuid,
+    pub size: f32,
+}
+
+impl Default for SpinnerWidget {
+    fn default() -> Self {
+        Self {
+            id: Uuid::new_v4(),
+            size: 20.0,
+        }
+    }
+}
+
+#[typetag::serde]
+impl WidgetNode for SpinnerWidget {
+    fn clone_box(&self) -> Box<dyn WidgetNode> {
+        Box::new(self.clone())
+    }
+
+    fn id(&self) -> Uuid {
+        self.id
+    }
+
+    fn name(&self) -> &str {
+        "Spinner"
+    }
+
+    fn render_editor(&mut self, ui: &mut Ui, selection: &mut HashSet<Uuid>) {
+        let response = ui.add(egui::Spinner::new().size(self.size));
+        let response = response.interact(egui::Sense::click());
+
+        if response.clicked() {
+            selection.clear();
+            selection.insert(self.id);
+        }
+
+        if selection.contains(&self.id) {
+            draw_gizmo(ui, response.rect);
+        }
+
+        response.on_hover_text(format!("Spinner (size: {})\nID: {}", self.size, self.id));
+    }
+
+    fn inspect(&mut self, ui: &mut Ui, _known_variables: &[String]) {
+        ui.heading("Spinner Properties");
+        ui.horizontal(|ui| {
+            ui.label("Size:");
+            ui.add(egui::DragValue::new(&mut self.size).speed(1.0).range(10.0..=100.0));
+        });
+        ui.label(format!("ID: {}", self.id));
+    }
+
+    fn codegen(&self) -> proc_macro2::TokenStream {
+        let size = self.size;
+        quote! { ui.add(egui::Spinner::new().size(#size)); }
+    }
+}
+
+// --- Hyperlink ---
+/// A clickable hyperlink
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct HyperlinkWidget {
+    pub id: Uuid,
+    pub text: String,
+    pub url: String,
+}
+
+impl Default for HyperlinkWidget {
+    fn default() -> Self {
+        Self {
+            id: Uuid::new_v4(),
+            text: "Click here".to_string(),
+            url: "https://example.com".to_string(),
+        }
+    }
+}
+
+#[typetag::serde]
+impl WidgetNode for HyperlinkWidget {
+    fn clone_box(&self) -> Box<dyn WidgetNode> {
+        Box::new(self.clone())
+    }
+
+    fn id(&self) -> Uuid {
+        self.id
+    }
+
+    fn name(&self) -> &str {
+        "Hyperlink"
+    }
+
+    fn render_editor(&mut self, ui: &mut Ui, selection: &mut HashSet<Uuid>) {
+        let response = ui.hyperlink_to(&self.text, &self.url);
+
+        if response.clicked() {
+            selection.clear();
+            selection.insert(self.id);
+        }
+
+        if selection.contains(&self.id) {
+            draw_gizmo(ui, response.rect);
+        }
+
+        response.on_hover_text(format!("Hyperlink: {}\nURL: {}\nID: {}", self.text, self.url, self.id));
+    }
+
+    fn inspect(&mut self, ui: &mut Ui, _known_variables: &[String]) {
+        ui.heading("Hyperlink Properties");
+        ui.horizontal(|ui| {
+            ui.label("Text:");
+            ui.text_edit_singleline(&mut self.text);
+        });
+        ui.horizontal(|ui| {
+            ui.label("URL:");
+            ui.text_edit_singleline(&mut self.url);
+        });
+        ui.label(format!("ID: {}", self.id));
+    }
+
+    fn codegen(&self) -> proc_macro2::TokenStream {
+        let text = &self.text;
+        let url = &self.url;
+        quote! { ui.hyperlink_to(#text, #url); }
     }
 }
