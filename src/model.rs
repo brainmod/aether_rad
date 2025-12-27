@@ -32,6 +32,8 @@ pub struct Variable {
 /// [cite: 47, 55]
 #[typetag::serde(tag = "type")]
 pub trait WidgetNode: std::fmt::Debug {
+    /// Clone this widget node into a boxed trait object
+    fn clone_box(&self) -> Box<dyn WidgetNode>;
     /// Distinct behavior 1: Editor Visualization
     /// How the widget renders itself inside the designer canvas.
     /// [cite: 50]
@@ -81,6 +83,32 @@ pub struct ProjectState {
     /// Application state variables (e.g., "counter: i32").
     ///
     pub variables: HashMap<String, Variable>,
+
+    /// Project name used for code generation.
+    ///
+    #[serde(default = "default_project_name")]
+    pub project_name: String,
+
+    /// Pending reorder operation (source_id, target_id).
+    /// Not serialized - runtime only.
+    #[serde(skip)]
+    pub pending_reorder: Option<(Uuid, Uuid)>,
+}
+
+fn default_project_name() -> String {
+    "my_app".to_string()
+}
+
+impl Clone for ProjectState {
+    fn clone(&self) -> Self {
+        Self {
+            root_node: self.root_node.clone_box(),
+            selection: self.selection.clone(),
+            variables: self.variables.clone(),
+            project_name: self.project_name.clone(),
+            pending_reorder: None, // Reset pending operations on clone
+        }
+    }
 }
 
 impl ProjectState {
@@ -89,6 +117,8 @@ impl ProjectState {
             root_node: root,
             selection: HashSet::new(),
             variables: HashMap::new(),
+            project_name: default_project_name(),
+            pending_reorder: None,
         }
     }
 
@@ -101,6 +131,92 @@ impl ProjectState {
     /// Recursively find a node by its UUID.
     pub fn find_node_mut(&mut self, id: Uuid) -> Option<&mut dyn WidgetNode> {
         find_node_recursive_mut(self.root_node.as_mut(), id)
+    }
+
+    /// Delete a widget by its ID. Returns true if the widget was found and deleted.
+    /// Cannot delete the root node.
+    pub fn delete_widget(&mut self, id: Uuid) -> bool {
+        // Don't allow deleting the root node
+        if self.root_node.id() == id {
+            return false;
+        }
+
+        delete_node_recursive(self.root_node.as_mut(), id)
+    }
+
+    /// Find the parent of a widget by the child's ID
+    pub fn find_parent_mut(&mut self, child_id: Uuid) -> Option<&mut dyn WidgetNode> {
+        find_parent_recursive_mut(self.root_node.as_mut(), child_id)
+    }
+
+    /// Move a widget within its parent's children list
+    pub fn reorder_widget(&mut self, widget_id: Uuid, new_index: usize) -> bool {
+        reorder_widget_recursive(self.root_node.as_mut(), widget_id, new_index)
+    }
+
+    /// Move a widget up in its parent's children list (towards index 0)
+    pub fn move_widget_up(&mut self, widget_id: Uuid) -> bool {
+        move_widget_in_parent(self.root_node.as_mut(), widget_id, -1)
+    }
+
+    /// Move a widget down in its parent's children list (towards end)
+    pub fn move_widget_down(&mut self, widget_id: Uuid) -> bool {
+        move_widget_in_parent(self.root_node.as_mut(), widget_id, 1)
+    }
+
+    /// Get all widget IDs in hierarchy order (depth-first traversal)
+    pub fn get_all_widget_ids(&self) -> Vec<Uuid> {
+        let mut ids = Vec::new();
+        collect_widget_ids(self.root_node.as_ref(), &mut ids);
+        ids
+    }
+
+    /// Get the current root layout type as a string
+    pub fn root_layout_type(&self) -> &str {
+        self.root_node.name()
+    }
+
+    /// Change the root layout type (preserves children and ID)
+    pub fn set_root_layout_type(&mut self, layout_type: &str) {
+        use crate::widgets::{VerticalLayout, HorizontalLayout, GridLayout};
+
+        // Extract current children and ID
+        let current_id = self.root_node.id();
+        let current_children = if let Some(children) = self.root_node.children() {
+            children.iter().map(|c| c.clone_box()).collect()
+        } else {
+            Vec::new()
+        };
+
+        // Create new root with same ID and children
+        self.root_node = match layout_type {
+            "Vertical Layout" => Box::new(VerticalLayout {
+                id: current_id,
+                children: current_children,
+                spacing: 5.0,
+            }),
+            "Horizontal Layout" => Box::new(HorizontalLayout {
+                id: current_id,
+                children: current_children,
+                spacing: 5.0,
+            }),
+            "Grid Layout" => Box::new(GridLayout {
+                id: current_id,
+                children: current_children,
+                columns: 2,
+                spacing: 5.0,
+            }),
+            _ => return, // Unknown layout type, do nothing
+        };
+    }
+}
+
+fn collect_widget_ids(node: &dyn WidgetNode, ids: &mut Vec<Uuid>) {
+    ids.push(node.id());
+    if let Some(children) = node.children() {
+        for child in children {
+            collect_widget_ids(child.as_ref(), ids);
+        }
     }
 }
 
@@ -116,6 +232,100 @@ fn find_node_recursive_mut(node: &mut dyn WidgetNode, target: Uuid) -> Option<&m
         }
     }
     None
+}
+
+fn delete_node_recursive(node: &mut dyn WidgetNode, target: Uuid) -> bool {
+    if let Some(children) = node.children_mut() {
+        // First, check if any direct child matches the target
+        if let Some(index) = children.iter().position(|c| c.id() == target) {
+            children.remove(index);
+            return true;
+        }
+
+        // If not found in direct children, recurse into each child
+        for child in children.iter_mut() {
+            if delete_node_recursive(child.as_mut(), target) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+fn find_parent_recursive_mut(node: &mut dyn WidgetNode, child_id: Uuid) -> Option<&mut dyn WidgetNode> {
+    // First, check if any direct child matches (without holding the borrow)
+    let has_matching_child = if let Some(children) = node.children() {
+        children.iter().any(|c| c.id() == child_id)
+    } else {
+        false
+    };
+
+    if has_matching_child {
+        return Some(node);
+    }
+
+    // Recurse into each child
+    if let Some(children) = node.children_mut() {
+        for child in children.iter_mut() {
+            if let Some(parent) = find_parent_recursive_mut(child.as_mut(), child_id) {
+                return Some(parent);
+            }
+        }
+    }
+    None
+}
+
+fn reorder_widget_recursive(node: &mut dyn WidgetNode, widget_id: Uuid, new_index: usize) -> bool {
+    if let Some(children) = node.children_mut() {
+        // Check if the widget is a direct child
+        if let Some(old_index) = children.iter().position(|c| c.id() == widget_id) {
+            if new_index < children.len() {
+                let widget = children.remove(old_index);
+                let insert_index = if new_index > old_index {
+                    new_index - 1
+                } else {
+                    new_index
+                };
+                children.insert(insert_index.min(children.len()), widget);
+                return true;
+            }
+        }
+
+        // Recurse into each child
+        for child in children.iter_mut() {
+            if reorder_widget_recursive(child.as_mut(), widget_id, new_index) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+/// Move a widget up or down within its parent's children list
+/// delta: -1 for up (towards index 0), +1 for down (towards end)
+fn move_widget_in_parent(node: &mut dyn WidgetNode, widget_id: Uuid, delta: i32) -> bool {
+    if let Some(children) = node.children_mut() {
+        // Check if the widget is a direct child
+        if let Some(current_index) = children.iter().position(|c| c.id() == widget_id) {
+            let new_index = current_index as i32 + delta;
+
+            // Check bounds
+            if new_index >= 0 && new_index < children.len() as i32 {
+                let widget = children.remove(current_index);
+                children.insert(new_index as usize, widget);
+                return true;
+            }
+            return false; // Can't move further in that direction
+        }
+
+        // Recurse into each child
+        for child in children.iter_mut() {
+            if move_widget_in_parent(child.as_mut(), widget_id, delta) {
+                return true;
+            }
+        }
+    }
+    false
 }
 
 #[cfg(test)]
