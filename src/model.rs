@@ -160,6 +160,45 @@ impl ProjectState {
         collect_widget_ids(self.root_node.as_ref(), &mut ids);
         ids
     }
+
+    /// Get the current root layout type as a string
+    pub fn root_layout_type(&self) -> &str {
+        self.root_node.name()
+    }
+
+    /// Change the root layout type (preserves children and ID)
+    pub fn set_root_layout_type(&mut self, layout_type: &str) {
+        use crate::widgets::{VerticalLayout, HorizontalLayout, GridLayout};
+
+        // Extract current children and ID
+        let current_id = self.root_node.id();
+        let current_children = if let Some(children) = self.root_node.children() {
+            children.iter().map(|c| c.clone_box()).collect()
+        } else {
+            Vec::new()
+        };
+
+        // Create new root with same ID and children
+        self.root_node = match layout_type {
+            "Vertical Layout" => Box::new(VerticalLayout {
+                id: current_id,
+                children: current_children,
+                spacing: 5.0,
+            }),
+            "Horizontal Layout" => Box::new(HorizontalLayout {
+                id: current_id,
+                children: current_children,
+                spacing: 5.0,
+            }),
+            "Grid Layout" => Box::new(GridLayout {
+                id: current_id,
+                children: current_children,
+                columns: 2,
+                spacing: 5.0,
+            }),
+            _ => return, // Unknown layout type, do nothing
+        };
+    }
 }
 
 fn collect_widget_ids(node: &dyn WidgetNode, ids: &mut Vec<Uuid>) {

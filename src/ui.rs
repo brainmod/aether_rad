@@ -136,15 +136,8 @@ impl<'a> AetherTabViewer<'a> {
             });
         }
 
-        // Track if any reordering happened
-        let mut reorder_action: Option<(Uuid, Uuid)> = None;
-
-        draw_hierarchy_node(ui, ps.root_node.as_ref(), &mut ps.selection, &mut reorder_action);
-
-        // Store pending reorder operation for processing in app update (with undo)
-        if let Some((source_id, target_id)) = reorder_action {
-            ps.pending_reorder = Some((source_id, target_id));
-        }
+        // Simplified hierarchy - no drag-and-drop to avoid interference
+        draw_hierarchy_node_simple(ui, ps.root_node.as_ref(), &mut ps.selection);
     }
 
     fn render_inspector(&mut self, ui: &mut Ui) {
@@ -152,20 +145,45 @@ impl<'a> AetherTabViewer<'a> {
 
         if let Some(id) = self.project_state.selection.iter().next().cloned() {
             let known_vars: Vec<String> = self.project_state.variables.keys().cloned().collect();
+            let is_root = id == self.project_state.root_node.id();
+
+            // If root layout is selected, show layout type switcher
+            if is_root {
+                ui.heading("Root Layout Type");
+                ui.separator();
+
+                let current_type = self.project_state.root_layout_type();
+                let mut selected_type = current_type.to_string();
+
+                ui.label("Change root layout:");
+                ui.horizontal(|ui| {
+                    ui.selectable_value(&mut selected_type, "Vertical Layout".to_string(), "Vertical");
+                    ui.selectable_value(&mut selected_type, "Horizontal Layout".to_string(), "Horizontal");
+                    ui.selectable_value(&mut selected_type, "Grid Layout".to_string(), "Grid");
+                });
+
+                if selected_type != current_type {
+                    self.project_state.set_root_layout_type(&selected_type);
+                }
+
+                ui.separator();
+            }
 
             if let Some(node) = self.project_state.find_node_mut(id) {
                 node.inspect(ui, &known_vars);
 
                 ui.separator();
 
-                // Add Delete button
-                ui.horizontal(|ui| {
-                    if ui.button("🗑 Delete Widget").clicked() {
-                        if self.project_state.delete_widget(id) {
-                            self.project_state.selection.clear();
+                // Add Delete button (not for root)
+                if !is_root {
+                    ui.horizontal(|ui| {
+                        if ui.button("🗑 Delete Widget").clicked() {
+                            if self.project_state.delete_widget(id) {
+                                self.project_state.selection.clear();
+                            }
                         }
-                    }
-                });
+                    });
+                }
 
                 return;
             }
@@ -347,6 +365,51 @@ impl<'a> AetherTabViewer<'a> {
     }
 }
 
+// Simplified hierarchy node rendering without drag-and-drop
+fn draw_hierarchy_node_simple(
+    ui: &mut Ui,
+    node: &dyn WidgetNode,
+    selection: &mut HashSet<Uuid>,
+) {
+    let id = node.id();
+    let is_selected = selection.contains(&id);
+
+    let children = node.children();
+    let has_children = children.map_or(false, |c| !c.is_empty());
+
+    if has_children {
+        let color = if is_selected {
+            ui.visuals().selection.bg_fill
+        } else {
+            ui.visuals().text_color()
+        };
+        let title = egui::RichText::new(node.name()).color(color);
+
+        let header = egui::CollapsingHeader::new(title)
+            .id_salt(id)
+            .default_open(true);
+
+        let body_response = header.show(ui, |ui| {
+            if let Some(children) = children {
+                for child in children {
+                    draw_hierarchy_node_simple(ui, child.as_ref(), selection);
+                }
+            }
+        });
+
+        if body_response.header_response.clicked() {
+            selection.clear();
+            selection.insert(id);
+        }
+    } else {
+        if ui.selectable_label(is_selected, node.name()).clicked() {
+            selection.clear();
+            selection.insert(id);
+        }
+    }
+}
+
+// Original hierarchy with drag-and-drop (kept for reference, but not currently used)
 fn draw_hierarchy_node(
     ui: &mut Ui,
     node: &dyn WidgetNode,
