@@ -63,6 +63,9 @@ impl WidgetIcons {
             "Label" => "𝐀",
             "Progress Bar" => "▰",
             "Image" => "🖼",
+            "Separator" => "━",
+            "Spinner" => "◌",
+            "Hyperlink" => "🔗",
 
             // Default
             _ => "◆",
@@ -199,7 +202,7 @@ pub fn widget_category_color(widget_name: &str) -> Color32 {
     match widget_name {
         "Vertical Layout" | "Horizontal Layout" | "Grid Layout" => AetherColors::LAYOUT_COLOR,
         "Button" | "Checkbox" | "Slider" | "Text Edit" | "ComboBox" => AetherColors::INPUT_COLOR,
-        "Label" | "Progress Bar" | "Image" => AetherColors::DISPLAY_COLOR,
+        "Label" | "Progress Bar" | "Image" | "Separator" | "Spinner" | "Hyperlink" => AetherColors::DISPLAY_COLOR,
         _ => AetherColors::MUTED,
     }
 }

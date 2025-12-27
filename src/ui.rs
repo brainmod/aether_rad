@@ -118,6 +118,9 @@ impl<'a> AetherTabViewer<'a> {
                 "Label",
                 "Progress Bar",
                 "Image",
+                "Separator",
+                "Spinner",
+                "Hyperlink",
             ], AetherColors::DISPLAY_COLOR);
         });
     }
