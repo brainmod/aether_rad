@@ -92,6 +92,93 @@ fn handle_selection(ui: &egui::Ui, widget_id: Uuid, response_clicked: bool, sele
     });
 }
 
+/// Context menu action for widgets
+#[derive(Debug, Clone, PartialEq)]
+pub enum ContextMenuAction {
+    None,
+    Delete,
+    Duplicate,
+    MoveUp,
+    MoveDown,
+    WrapInVertical,
+    WrapInHorizontal,
+}
+
+/// Create an interaction overlay for more reliable selection hit detection
+/// This adds an expanded clickable area around the widget rect
+/// Returns both the response and any context menu action triggered
+fn create_selection_overlay(ui: &mut egui::Ui, rect: egui::Rect, widget_id: Uuid) -> egui::Response {
+    // Expand the rect slightly for easier clicking
+    let expanded_rect = rect.expand(4.0);
+
+    // Create an invisible interaction layer over the widget
+    let id = egui::Id::new("select_overlay").with(widget_id);
+    let response = ui.interact(expanded_rect, id, egui::Sense::click_and_drag());
+
+    // Add context menu on right-click
+    response.clone().context_menu(|ui| {
+        render_widget_context_menu(ui, widget_id);
+    });
+
+    response
+}
+
+/// Render context menu items for a widget
+fn render_widget_context_menu(ui: &mut egui::Ui, _widget_id: Uuid) {
+    if ui.button("✕ Delete").clicked() {
+        ui.memory_mut(|mem| mem.data.insert_temp(egui::Id::new("context_action"), ContextMenuAction::Delete));
+        ui.close();
+    }
+    if ui.button("⎘ Duplicate").clicked() {
+        ui.memory_mut(|mem| mem.data.insert_temp(egui::Id::new("context_action"), ContextMenuAction::Duplicate));
+        ui.close();
+    }
+    ui.separator();
+    if ui.button("↑ Move Up").clicked() {
+        ui.memory_mut(|mem| mem.data.insert_temp(egui::Id::new("context_action"), ContextMenuAction::MoveUp));
+        ui.close();
+    }
+    if ui.button("↓ Move Down").clicked() {
+        ui.memory_mut(|mem| mem.data.insert_temp(egui::Id::new("context_action"), ContextMenuAction::MoveDown));
+        ui.close();
+    }
+    ui.separator();
+    ui.menu_button("⊞ Wrap in...", |ui| {
+        if ui.button("Vertical Layout").clicked() {
+            ui.memory_mut(|mem| mem.data.insert_temp(egui::Id::new("context_action"), ContextMenuAction::WrapInVertical));
+            ui.close();
+        }
+        if ui.button("Horizontal Layout").clicked() {
+            ui.memory_mut(|mem| mem.data.insert_temp(egui::Id::new("context_action"), ContextMenuAction::WrapInHorizontal));
+            ui.close();
+        }
+    });
+}
+
+/// Create a container selection overlay that only responds to clicks in the border area
+/// This allows child widgets to be selected without also selecting the parent
+fn create_container_selection_overlay(ui: &mut egui::Ui, outer_rect: egui::Rect, inner_margin: f32, widget_id: Uuid) -> bool {
+    // Only respond to clicks in the border area (outer rect minus inner content rect)
+    let inner_rect = outer_rect.shrink(inner_margin.max(8.0));
+    let id = egui::Id::new("container_select_overlay").with(widget_id);
+
+    // Check if mouse is in border area (outside inner rect but inside outer rect)
+    if let Some(mouse_pos) = ui.ctx().pointer_hover_pos() {
+        if outer_rect.expand(4.0).contains(mouse_pos) && !inner_rect.shrink(4.0).contains(mouse_pos) {
+            // Mouse is in border area - create interaction
+            let response = ui.interact(outer_rect.expand(4.0), id, egui::Sense::click_and_drag());
+
+            // Add context menu on right-click
+            response.clone().context_menu(|ui| {
+                render_widget_context_menu(ui, widget_id);
+            });
+
+            return response.clicked();
+        }
+    }
+    false
+}
+
 /// Render an action editor in the Inspector
 fn render_action_editor(ui: &mut egui::Ui, action: &mut crate::model::Action, known_variables: &[String]) {
     use crate::model::Action;
@@ -309,12 +396,14 @@ impl WidgetNode for VerticalLayout {
                 });
             }).response;
 
-        // Interaction & Gizmo for the container itself
-        let is_selected = selection.contains(&self.id);
+        // Handle container selection only via border (not content area where children are)
+        let widget_rect = response.rect;
+        let border_clicked = create_container_selection_overlay(ui, widget_rect, self.padding.max(8.0), self.id);
+        handle_selection(ui, self.id, border_clicked, selection);
 
-        // Gizmo (Outline)
-        if is_selected {
-            draw_gizmo(ui, response.rect);
+        // Gizmo (Outline) if selected
+        if selection.contains(&self.id) {
+            draw_gizmo(ui, widget_rect);
         }
 
         // Drop Zone
@@ -515,9 +604,13 @@ impl WidgetNode for HorizontalLayout {
             })
             .response;
 
-        let is_selected = selection.contains(&self.id);
-        if is_selected {
-            draw_gizmo(ui, response.rect);
+        // Handle container selection only via border (not content area where children are)
+        let widget_rect = response.rect;
+        let border_clicked = create_container_selection_overlay(ui, widget_rect, 8.0, self.id);
+        handle_selection(ui, self.id, border_clicked, selection);
+
+        if selection.contains(&self.id) {
+            draw_gizmo(ui, widget_rect);
         }
     }
 
@@ -644,9 +737,13 @@ impl WidgetNode for GridLayout {
             })
             .response;
 
-        let is_selected = selection.contains(&self.id);
-        if is_selected {
-            draw_gizmo(ui, response.rect);
+        // Handle container selection only via border (not content area where children are)
+        let widget_rect = response.rect;
+        let border_clicked = create_container_selection_overlay(ui, widget_rect, 8.0, self.id);
+        handle_selection(ui, self.id, border_clicked, selection);
+
+        if selection.contains(&self.id) {
+            draw_gizmo(ui, widget_rect);
         }
     }
 
@@ -744,19 +841,21 @@ impl WidgetNode for ButtonWidget {
     // Render logic for the Editor Canvas
     fn render_editor(&mut self, ui: &mut Ui, selection: &mut HashSet<Uuid>) {
         // In the editor, we just draw the button.
-        // Later (Phase 3), this will be wrapped in interaction interceptors.
-        // [cite: 107]
         let response = ui.button(&self.text);
+        let widget_rect = response.rect;
 
-        // Handle multi-selection with Ctrl/Cmd support
-        handle_selection(ui, self.id, response.clicked(), selection);
+        // Create selection overlay for better hit detection
+        let overlay = create_selection_overlay(ui, widget_rect, self.id);
+
+        // Handle selection via overlay (more reliable than the button itself)
+        handle_selection(ui, self.id, overlay.clicked(), selection);
 
         if selection.contains(&self.id) {
-            draw_gizmo(ui, response.rect);
+            draw_gizmo(ui, widget_rect);
         }
 
-        // Show tooltip on hover with widget properties
-        response.on_hover_text(format!("Button: {}\nID: {}", self.text, self.id));
+        // Show tooltip on hover
+        overlay.on_hover_text(format!("Button: {}\nID: {}", self.text, self.id));
     }
 
     // The "Inspectable" pattern: The widget defines its own property UI.
@@ -923,17 +1022,20 @@ impl WidgetNode for LabelWidget {
 
     fn render_editor(&mut self, ui: &mut Ui, selection: &mut HashSet<Uuid>) {
         let response = ui.label(&self.text);
-        let response = response.interact(egui::Sense::click()); // Labels aren't clickable by default
+        let widget_rect = response.rect;
 
-        // Handle multi-selection with Ctrl/Cmd support
-        handle_selection(ui, self.id, response.clicked(), selection);
+        // Create selection overlay for better hit detection
+        let overlay = create_selection_overlay(ui, widget_rect, self.id);
+
+        // Handle selection via overlay
+        handle_selection(ui, self.id, overlay.clicked(), selection);
 
         if selection.contains(&self.id) {
-            draw_gizmo(ui, response.rect);
+            draw_gizmo(ui, widget_rect);
         }
 
         // Show tooltip
-        response.on_hover_text(format!("Label: {}\nID: {}", self.text, self.id));
+        overlay.on_hover_text(format!("Label: {}\nID: {}", self.text, self.id));
     }
 
     fn inspect(&mut self, ui: &mut Ui, known_variables: &[String], _known_assets: &[(String, String)]) {
@@ -1018,21 +1120,25 @@ impl WidgetNode for TextEditWidget {
     }
 
     fn render_editor(&mut self, ui: &mut Ui, selection: &mut HashSet<Uuid>) {
-        let response = ui.text_edit_singleline(&mut self.text); // In editor, it's just local state
-                                                                // TextEdit captures click, so we might need a frame or sense logic.
-                                                                // For now, assume clicking it selects it.
-        if response.clicked() || response.has_focus() {
+        let response = ui.text_edit_singleline(&mut self.text);
+        let widget_rect = response.rect;
+
+        // Create selection overlay for better hit detection
+        let overlay = create_selection_overlay(ui, widget_rect, self.id);
+
+        // Handle selection via overlay (also select on focus)
+        if overlay.clicked() || response.has_focus() {
             if !selection.contains(&self.id) {
                 selection.clear();
                 selection.insert(self.id);
             }
         }
         if selection.contains(&self.id) {
-            draw_gizmo(ui, response.rect);
+            draw_gizmo(ui, widget_rect);
         }
 
         // Show tooltip
-        response.on_hover_text(format!("Text Edit: {}\nID: {}", self.text, self.id));
+        overlay.on_hover_text(format!("Text Edit: {}\nID: {}", self.text, self.id));
     }
 
     fn inspect(&mut self, ui: &mut Ui, known_variables: &[String], _known_assets: &[(String, String)]) {
@@ -1193,14 +1299,18 @@ impl WidgetNode for CheckboxWidget {
 
     fn render_editor(&mut self, ui: &mut Ui, selection: &mut HashSet<Uuid>) {
         let response = ui.checkbox(&mut self.checked, &self.label);
-        // Handle multi-selection with Ctrl/Cmd support
-        handle_selection(ui, self.id, response.clicked(), selection);
+        let widget_rect = response.rect;
+
+        // Create selection overlay for better hit detection
+        let overlay = create_selection_overlay(ui, widget_rect, self.id);
+        handle_selection(ui, self.id, overlay.clicked(), selection);
+
         if selection.contains(&self.id) {
-            draw_gizmo(ui, response.rect);
+            draw_gizmo(ui, widget_rect);
         }
 
         // Show tooltip
-        response.on_hover_text(format!("Checkbox: {} ({})\nID: {}", self.label, if self.checked { "✓" } else { "☐" }, self.id));
+        overlay.on_hover_text(format!("Checkbox: {} ({})\nID: {}", self.label, if self.checked { "✓" } else { "☐" }, self.id));
     }
 
     fn inspect(&mut self, ui: &mut Ui, known_variables: &[String], _known_assets: &[(String, String)]) {
@@ -1335,19 +1445,24 @@ impl WidgetNode for SliderWidget {
 
     fn render_editor(&mut self, ui: &mut Ui, selection: &mut HashSet<Uuid>) {
         let response = ui.add(egui::Slider::new(&mut self.value, self.min..=self.max));
-        if response.clicked() || response.dragged() {
-            // Sliders are dragged
+        let widget_rect = response.rect;
+
+        // Create selection overlay for better hit detection
+        let overlay = create_selection_overlay(ui, widget_rect, self.id);
+
+        // Select on overlay click or when slider is dragged
+        if overlay.clicked() || response.dragged() {
             if !selection.contains(&self.id) {
                 selection.clear();
                 selection.insert(self.id);
             }
         }
         if selection.contains(&self.id) {
-            draw_gizmo(ui, response.rect);
+            draw_gizmo(ui, widget_rect);
         }
 
         // Show tooltip
-        response.on_hover_text(format!("Slider: {} ({}-{})\nID: {}", self.value, self.min, self.max, self.id));
+        overlay.on_hover_text(format!("Slider: {} ({}-{})\nID: {}", self.value, self.min, self.max, self.id));
     }
 
     fn inspect(&mut self, ui: &mut Ui, known_variables: &[String], _known_assets: &[(String, String)]) {
@@ -1480,16 +1595,18 @@ impl WidgetNode for ProgressBarWidget {
 
     fn render_editor(&mut self, ui: &mut Ui, selection: &mut HashSet<Uuid>) {
         let response = ui.add(egui::ProgressBar::new(self.value).show_percentage());
-        let response = response.interact(egui::Sense::click());
+        let widget_rect = response.rect;
 
-        // Handle multi-selection with Ctrl/Cmd support
-        handle_selection(ui, self.id, response.clicked(), selection);
+        // Create selection overlay for better hit detection
+        let overlay = create_selection_overlay(ui, widget_rect, self.id);
+        handle_selection(ui, self.id, overlay.clicked(), selection);
+
         if selection.contains(&self.id) {
-            draw_gizmo(ui, response.rect);
+            draw_gizmo(ui, widget_rect);
         }
 
         // Show tooltip
-        response.on_hover_text(format!("Progress Bar: {:.0}%\nID: {}", self.value * 100.0, self.id));
+        overlay.on_hover_text(format!("Progress Bar: {:.0}%\nID: {}", self.value * 100.0, self.id));
     }
 
     fn inspect(&mut self, ui: &mut Ui, known_variables: &[String], _known_assets: &[(String, String)]) {
@@ -1800,20 +1917,20 @@ impl WidgetNode for ImageWidget {
         } else {
             ui.label(format!("🖼 {}", self.path.split('/').last().unwrap_or(&self.path)))
         };
+        let widget_rect = response.rect;
 
-        let response = response.interact(egui::Sense::click());
-
-        // Handle multi-selection with Ctrl/Cmd support
-        handle_selection(ui, self.id, response.clicked(), selection);
+        // Create selection overlay for better hit detection
+        let overlay = create_selection_overlay(ui, widget_rect, self.id);
+        handle_selection(ui, self.id, overlay.clicked(), selection);
 
         let is_selected = selection.contains(&self.id);
         if is_selected {
-            draw_gizmo(ui, response.rect);
-            draw_resize_handles(ui, response.rect);
+            draw_gizmo(ui, widget_rect);
+            draw_resize_handles(ui, widget_rect);
 
             // Handle resize dragging
             if let Some(hover_pos) = ui.ctx().pointer_hover_pos() {
-                if let Some(handle) = check_resize_handle(ui, response.rect, hover_pos) {
+                if let Some(handle) = check_resize_handle(ui, widget_rect, hover_pos) {
                     // Show resize cursor based on handle direction
                     let cursor = match handle {
                         "nw" | "se" => egui::CursorIcon::ResizeNwSe,
@@ -1869,7 +1986,7 @@ impl WidgetNode for ImageWidget {
             (None, Some(h)) => format!(" (h:{})", h),
             (None, None) => "".to_string(),
         };
-        response.on_hover_text(format!("Image{}\nPath: {}\nID: {}", size_info, self.path, self.id));
+        overlay.on_hover_text(format!("Image{}\nPath: {}\nID: {}", size_info, self.path, self.id));
     }
 
     fn inspect(&mut self, ui: &mut Ui, _known_variables: &[String], known_assets: &[(String, String)]) {
@@ -2049,16 +2166,17 @@ impl WidgetNode for SeparatorWidget {
 
     fn render_editor(&mut self, ui: &mut Ui, selection: &mut HashSet<Uuid>) {
         let response = ui.separator();
-        let response = response.interact(egui::Sense::click());
+        let widget_rect = response.rect;
 
-        // Handle multi-selection with Ctrl/Cmd support
-        handle_selection(ui, self.id, response.clicked(), selection);
+        // Create selection overlay for better hit detection
+        let overlay = create_selection_overlay(ui, widget_rect, self.id);
+        handle_selection(ui, self.id, overlay.clicked(), selection);
 
         if selection.contains(&self.id) {
-            draw_gizmo(ui, response.rect);
+            draw_gizmo(ui, widget_rect);
         }
 
-        response.on_hover_text(format!("Separator\nID: {}", self.id));
+        overlay.on_hover_text(format!("Separator\nID: {}", self.id));
     }
 
     fn inspect(&mut self, ui: &mut Ui, _known_variables: &[String], _known_assets: &[(String, String)]) {
@@ -2105,16 +2223,17 @@ impl WidgetNode for SpinnerWidget {
 
     fn render_editor(&mut self, ui: &mut Ui, selection: &mut HashSet<Uuid>) {
         let response = ui.add(egui::Spinner::new().size(self.size));
-        let response = response.interact(egui::Sense::click());
+        let widget_rect = response.rect;
 
-        // Handle multi-selection with Ctrl/Cmd support
-        handle_selection(ui, self.id, response.clicked(), selection);
+        // Create selection overlay for better hit detection
+        let overlay = create_selection_overlay(ui, widget_rect, self.id);
+        handle_selection(ui, self.id, overlay.clicked(), selection);
 
         if selection.contains(&self.id) {
-            draw_gizmo(ui, response.rect);
+            draw_gizmo(ui, widget_rect);
         }
 
-        response.on_hover_text(format!("Spinner (size: {})\nID: {}", self.size, self.id));
+        overlay.on_hover_text(format!("Spinner (size: {})\nID: {}", self.size, self.id));
     }
 
     fn inspect(&mut self, ui: &mut Ui, _known_variables: &[String], _known_assets: &[(String, String)]) {
@@ -2167,15 +2286,17 @@ impl WidgetNode for HyperlinkWidget {
 
     fn render_editor(&mut self, ui: &mut Ui, selection: &mut HashSet<Uuid>) {
         let response = ui.hyperlink_to(&self.text, &self.url);
+        let widget_rect = response.rect;
 
-        // Handle multi-selection with Ctrl/Cmd support
-        handle_selection(ui, self.id, response.clicked(), selection);
+        // Create selection overlay for better hit detection
+        let overlay = create_selection_overlay(ui, widget_rect, self.id);
+        handle_selection(ui, self.id, overlay.clicked(), selection);
 
         if selection.contains(&self.id) {
-            draw_gizmo(ui, response.rect);
+            draw_gizmo(ui, widget_rect);
         }
 
-        response.on_hover_text(format!("Hyperlink: {}\nURL: {}\nID: {}", self.text, self.url, self.id));
+        overlay.on_hover_text(format!("Hyperlink: {}\nURL: {}\nID: {}", self.text, self.url, self.id));
     }
 
     fn inspect(&mut self, ui: &mut Ui, _known_variables: &[String], _known_assets: &[(String, String)]) {
@@ -2313,12 +2434,13 @@ impl WidgetNode for WindowWidget {
             }
         }).response;
 
-        // Make the window container selectable
-        let container_response = response.interact(egui::Sense::click());
-        handle_selection(ui, self.id, container_response.clicked(), selection);
+        // Make the window container selectable only via border (not content area)
+        let widget_rect = response.rect;
+        let border_clicked = create_container_selection_overlay(ui, widget_rect, 8.0, self.id);
+        handle_selection(ui, self.id, border_clicked, selection);
 
         if selection.contains(&self.id) {
-            draw_gizmo(ui, response.rect);
+            draw_gizmo(ui, widget_rect);
         }
     }
 
@@ -2525,12 +2647,13 @@ impl WidgetNode for TabContainerWidget {
             }
         }).response;
 
-        // Make the tab container selectable
-        let container_response = response.interact(egui::Sense::click());
-        handle_selection(ui, self.id, container_response.clicked(), selection);
+        // Make the tab container selectable only via border (not content area)
+        let widget_rect = response.rect;
+        let border_clicked = create_container_selection_overlay(ui, widget_rect, 8.0, self.id);
+        handle_selection(ui, self.id, border_clicked, selection);
 
         if selection.contains(&self.id) {
-            draw_gizmo(ui, response.rect);
+            draw_gizmo(ui, widget_rect);
         }
     }
 
@@ -2720,12 +2843,13 @@ impl WidgetNode for ScrollAreaWidget {
             })
             .inner_rect;
 
-        // Make the scroll area selectable
-        let scroll_response = ui.interact(response, egui::Id::new(self.id), egui::Sense::click());
-        handle_selection(ui, self.id, scroll_response.clicked(), selection);
+        // Make the scroll area selectable only via border (not content area)
+        let widget_rect = response;
+        let border_clicked = create_container_selection_overlay(ui, widget_rect, 8.0, self.id);
+        handle_selection(ui, self.id, border_clicked, selection);
 
         if selection.contains(&self.id) {
-            draw_gizmo(ui, response);
+            draw_gizmo(ui, widget_rect);
         }
     }
 
@@ -2838,12 +2962,14 @@ impl WidgetNode for ColorPickerWidget {
 
     fn render_editor(&mut self, ui: &mut Ui, selection: &mut HashSet<Uuid>) {
         let response = ui.color_edit_button_rgba_unmultiplied(&mut self.color);
+        let widget_rect = response.rect;
 
-        // Handle multi-selection with Ctrl/Cmd support
-        handle_selection(ui, self.id, response.clicked(), selection);
+        // Create selection overlay for better hit detection
+        let overlay = create_selection_overlay(ui, widget_rect, self.id);
+        handle_selection(ui, self.id, overlay.clicked(), selection);
 
         if selection.contains(&self.id) {
-            draw_gizmo(ui, response.rect);
+            draw_gizmo(ui, widget_rect);
         }
 
         let hex = format!(
@@ -2853,7 +2979,7 @@ impl WidgetNode for ColorPickerWidget {
             (self.color[2] * 255.0) as u8,
             (self.color[3] * 255.0) as u8,
         );
-        response.on_hover_text(format!("Color: {}\nID: {}", hex, self.id));
+        overlay.on_hover_text(format!("Color: {}\nID: {}", hex, self.id));
     }
 
     fn inspect(&mut self, ui: &mut Ui, known_variables: &[String], _known_assets: &[(String, String)]) {
@@ -3135,11 +3261,13 @@ impl WidgetNode for FreeformLayout {
             }
         }
 
-        // Handle selection of the container itself
-        handle_selection(ui, self.id, response.clicked(), selection);
+        // Handle selection of the container itself only via border (not content area)
+        let widget_rect = response.rect;
+        let border_clicked = create_container_selection_overlay(ui, widget_rect, 10.0, self.id);
+        handle_selection(ui, self.id, border_clicked, selection);
 
         if selection.contains(&self.id) {
-            draw_gizmo(ui, response.rect);
+            draw_gizmo(ui, widget_rect);
         }
 
         // Drop zone for adding widgets

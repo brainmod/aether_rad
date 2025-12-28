@@ -92,16 +92,16 @@ impl<'a> AetherTabViewer<'a> {
 
                     // Zoom controls
                     if ui.button("−").clicked() {
-                        *self.canvas_zoom = (*self.canvas_zoom - 0.1).max(0.1);
+                        *self.canvas_zoom = (*self.canvas_zoom - 0.05).max(0.25);
                     }
                     ui.add(
-                        egui::Slider::new(self.canvas_zoom, 0.1..=3.0)
-                            .fixed_decimals(0)
-                            .text("%")
-                            .show_value(true),
+                        egui::Slider::new(self.canvas_zoom, 0.25..=3.0)
+                            .step_by(0.05)
+                            .custom_formatter(|v, _| format!("{:.0}%", v * 100.0))
+                            .custom_parser(|s| s.trim_end_matches('%').parse::<f64>().ok().map(|v| v / 100.0)),
                     );
                     if ui.button("+").clicked() {
-                        *self.canvas_zoom = (*self.canvas_zoom + 0.1).min(3.0);
+                        *self.canvas_zoom = (*self.canvas_zoom + 0.05).min(3.0);
                     }
                     if ui.button("100%").clicked() {
                         *self.canvas_zoom = 1.0;
@@ -193,10 +193,10 @@ impl<'a> AetherTabViewer<'a> {
                                 ui.style_mut().spacing.button_padding *= zoom;
                                 ui.style_mut().spacing.indent *= zoom;
 
-                                // Scale text sizes for widgets
+                                // Scale text sizes for widgets (with safety floor to prevent panic)
                                 let original_text_style = ui.style().text_styles.clone();
                                 for (_style, font_id) in ui.style_mut().text_styles.iter_mut() {
-                                    font_id.size *= zoom;
+                                    font_id.size = (font_id.size * zoom).max(4.0);
                                 }
 
                                 // Add some padding at the scaled level
@@ -221,7 +221,7 @@ impl<'a> AetherTabViewer<'a> {
                     if modifiers.ctrl && scroll_delta.y != 0.0 {
                         // Ctrl + scroll = zoom
                         let zoom_delta = scroll_delta.y * 0.001;
-                        *self.canvas_zoom = (*self.canvas_zoom + zoom_delta).clamp(0.1, 3.0);
+                        *self.canvas_zoom = (*self.canvas_zoom + zoom_delta).clamp(0.25, 3.0);
                     }
                 }
 
