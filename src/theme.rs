@@ -64,27 +64,29 @@ impl WidgetLabels {
     pub fn get(widget_name: &str) -> &'static str {
         match widget_name {
             // Layouts
-            "Vertical Layout" => "Vertical",
-            "Horizontal Layout" => "Horizontal",
-            "Grid Layout" => "Grid",
-            "Scroll Area" => "Scroll Area",
-            "Tab Container" => "Tab Container",
-            "Window" => "Window",
+            "Vertical Layout" => "⬇ Vertical",
+            "Horizontal Layout" => "➡ Horizontal",
+            "Grid Layout" => "⊞ Grid",
+            "Freeform Layout" => "◇ Freeform",
+            "Scroll Area" => "📜 Scroll Area",
+            "Tab Container" => "📑 Tab Container",
+            "Window" => "🗔 Window",
 
             // Inputs
-            "Button" => "Button",
-            "Checkbox" => "Checkbox",
-            "Slider" => "Slider",
-            "Text Edit" => "Text Edit",
-            "ComboBox" => "ComboBox",
+            "Button" => "🔘 Button",
+            "Checkbox" => "☑ Checkbox",
+            "Slider" => "─○─ Slider",
+            "Text Edit" => "📝 Text Edit",
+            "ComboBox" => "📋 ComboBox",
 
             // Display
-            "Label" => "Label",
-            "Progress Bar" => "Progress Bar",
-            "Image" => "Image",
-            "Separator" => "Separator",
-            "Spinner" => "Spinner",
-            "Hyperlink" => "Hyperlink",
+            "Label" => "📄 Label",
+            "Progress Bar" => "▓░ Progress Bar",
+            "Image" => "🖼 Image",
+            "Separator" => "─── Separator",
+            "Spinner" => "◌ Spinner",
+            "Hyperlink" => "🔗 Hyperlink",
+            "Color Picker" => "🎨 Color Picker",
 
             // Default
             _ => "Widget",
@@ -103,9 +105,9 @@ impl WidgetLabels {
     /// Get the widget type group (for color coding)
     pub fn get_category(widget_name: &str) -> &'static str {
         match widget_name {
-            "Vertical Layout" | "Horizontal Layout" | "Grid Layout" | "Scroll Area" | "Tab Container" | "Window" => "Layouts",
+            "Vertical Layout" | "Horizontal Layout" | "Grid Layout" | "Freeform Layout" | "Scroll Area" | "Tab Container" | "Window" => "Layouts",
             "Button" | "Checkbox" | "Slider" | "Text Edit" | "ComboBox" => "Inputs",
-            "Label" | "Progress Bar" | "Image" | "Separator" | "Spinner" | "Hyperlink" => "Display",
+            "Label" | "Progress Bar" | "Image" | "Separator" | "Spinner" | "Hyperlink" | "Color Picker" => "Display",
             _ => "Other",
         }
     }
@@ -306,9 +308,9 @@ pub fn widget_label(widget_name: &str) -> String {
 /// Get color for widget category
 pub fn widget_category_color(widget_name: &str) -> Color32 {
     match widget_name {
-        "Vertical Layout" | "Horizontal Layout" | "Grid Layout" | "Scroll Area" | "Tab Container" | "Window" => AetherColors::LAYOUT_COLOR,
+        "Vertical Layout" | "Horizontal Layout" | "Grid Layout" | "Freeform Layout" | "Scroll Area" | "Tab Container" | "Window" => AetherColors::LAYOUT_COLOR,
         "Button" | "Checkbox" | "Slider" | "Text Edit" | "ComboBox" => AetherColors::INPUT_COLOR,
-        "Label" | "Progress Bar" | "Image" | "Separator" | "Spinner" | "Hyperlink" => {
+        "Label" | "Progress Bar" | "Image" | "Separator" | "Spinner" | "Hyperlink" | "Color Picker" => {
             AetherColors::DISPLAY_COLOR
         }
         _ => AetherColors::MUTED,

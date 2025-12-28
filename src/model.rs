@@ -520,6 +520,7 @@ impl ProjectState {
                 id: current_id,
                 children: current_children,
                 spacing: 5.0,
+                ..Default::default()
             }),
             "Horizontal Layout" => Box::new(HorizontalLayout {
                 id: current_id,
@@ -534,6 +535,75 @@ impl ProjectState {
             }),
             _ => return, // Unknown layout type, do nothing
         };
+    }
+
+    /// Re-parent a widget: move it from its current parent to a new container at a specific index
+    /// Returns true if successful
+    pub fn reparent_widget(&mut self, widget_id: Uuid, new_parent_id: Uuid, index: usize) -> bool {
+        // Can't re-parent the root node
+        if widget_id == self.root_node.id() {
+            return false;
+        }
+
+        // Can't move a widget into itself or its descendants
+        if widget_id == new_parent_id || self.is_descendant_of(new_parent_id, widget_id) {
+            return false;
+        }
+
+        // Extract the widget from its current location
+        if let Some(widget) = extract_widget_recursive(self.root_node.as_mut(), widget_id) {
+            // Insert it at the new location
+            if insert_widget_at(self.root_node.as_mut(), new_parent_id, widget, index) {
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Move a widget before another widget (for drop insertion)
+    pub fn move_widget_before(&mut self, widget_id: Uuid, before_id: Uuid) -> bool {
+        // Find the parent and index of the "before" widget
+        if let Some(parent_id) = self.get_parent_id(before_id) {
+            if let Some(parent) = self.find_node_mut(parent_id) {
+                if let Some(index) = get_widget_index(parent, before_id) {
+                    return self.reparent_widget(widget_id, parent_id, index);
+                }
+            }
+        }
+        false
+    }
+
+    /// Move a widget after another widget (for drop insertion)
+    pub fn move_widget_after(&mut self, widget_id: Uuid, after_id: Uuid) -> bool {
+        if let Some(parent_id) = self.get_parent_id(after_id) {
+            if let Some(parent) = self.find_node_mut(parent_id) {
+                if let Some(index) = get_widget_index(parent, after_id) {
+                    return self.reparent_widget(widget_id, parent_id, index + 1);
+                }
+            }
+        }
+        false
+    }
+
+    /// Get the parent ID of a widget
+    pub fn get_parent_id(&self, child_id: Uuid) -> Option<Uuid> {
+        get_parent_id_recursive(self.root_node.as_ref(), child_id)
+    }
+
+    /// Check if `potential_descendant` is a descendant of `potential_ancestor`
+    fn is_descendant_of(&self, potential_descendant: Uuid, potential_ancestor: Uuid) -> bool {
+        if let Some(node) = find_node_by_id(self.root_node.as_ref(), potential_ancestor) {
+            return contains_id_recursive(node, potential_descendant);
+        }
+        false
+    }
+
+    /// Check if a widget is a container that can accept children
+    pub fn is_container(&self, widget_id: Uuid) -> bool {
+        if let Some(node) = find_node_by_id(self.root_node.as_ref(), widget_id) {
+            return is_container(node);
+        }
+        false
     }
 }
 
@@ -647,6 +717,110 @@ fn move_widget_in_parent(node: &mut dyn WidgetNode, widget_id: Uuid, delta: i32)
         // Recurse into each child
         for child in children.iter_mut() {
             if move_widget_in_parent(child.as_mut(), widget_id, delta) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+/// Remove a widget from the tree and return it (if found)
+fn extract_widget_recursive(node: &mut dyn WidgetNode, widget_id: Uuid) -> Option<Box<dyn WidgetNode>> {
+    if let Some(children) = node.children_mut() {
+        // Check if any direct child matches
+        if let Some(index) = children.iter().position(|c| c.id() == widget_id) {
+            return Some(children.remove(index));
+        }
+
+        // Recurse into each child
+        for child in children.iter_mut() {
+            if let Some(found) = extract_widget_recursive(child.as_mut(), widget_id) {
+                return Some(found);
+            }
+        }
+    }
+    None
+}
+
+/// Insert a widget as a child of the target container at the specified index
+fn insert_widget_at(node: &mut dyn WidgetNode, target_id: Uuid, widget: Box<dyn WidgetNode>, index: usize) -> bool {
+    if node.id() == target_id {
+        if let Some(children) = node.children_mut() {
+            let insert_at = index.min(children.len());
+            children.insert(insert_at, widget);
+            return true;
+        }
+        return false; // Target is not a container
+    }
+
+    if let Some(children) = node.children_mut() {
+        for child in children.iter_mut() {
+            if insert_widget_at(child.as_mut(), target_id, widget.clone_box(), index) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+/// Check if a widget is a container (has children capability)
+pub fn is_container(node: &dyn WidgetNode) -> bool {
+    node.children().is_some()
+}
+
+/// Get the index of a widget within its parent's children
+fn get_widget_index(node: &dyn WidgetNode, widget_id: Uuid) -> Option<usize> {
+    if let Some(children) = node.children() {
+        for (i, child) in children.iter().enumerate() {
+            if child.id() == widget_id {
+                return Some(i);
+            }
+        }
+    }
+    None
+}
+
+/// Get the parent ID of a widget
+fn get_parent_id_recursive(node: &dyn WidgetNode, child_id: Uuid) -> Option<Uuid> {
+    if let Some(children) = node.children() {
+        // Check if any direct child matches
+        if children.iter().any(|c| c.id() == child_id) {
+            return Some(node.id());
+        }
+
+        // Recurse into children
+        for child in children {
+            if let Some(parent_id) = get_parent_id_recursive(child.as_ref(), child_id) {
+                return Some(parent_id);
+            }
+        }
+    }
+    None
+}
+
+/// Find a node by ID (immutable version)
+fn find_node_by_id(node: &dyn WidgetNode, target_id: Uuid) -> Option<&dyn WidgetNode> {
+    if node.id() == target_id {
+        return Some(node);
+    }
+    if let Some(children) = node.children() {
+        for child in children {
+            if let Some(found) = find_node_by_id(child.as_ref(), target_id) {
+                return Some(found);
+            }
+        }
+    }
+    None
+}
+
+/// Check if a node contains a specific ID in its descendants
+fn contains_id_recursive(node: &dyn WidgetNode, target_id: Uuid) -> bool {
+    if node.id() == target_id {
+        return true;
+    }
+    if let Some(children) = node.children() {
+        for child in children {
+            if contains_id_recursive(child.as_ref(), target_id) {
                 return true;
             }
         }

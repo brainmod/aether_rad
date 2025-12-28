@@ -92,16 +92,16 @@ impl<'a> AetherTabViewer<'a> {
 
                     // Zoom controls
                     if ui.button("−").clicked() {
-                        *self.canvas_zoom = (*self.canvas_zoom - 0.1).max(0.1);
+                        *self.canvas_zoom = (*self.canvas_zoom - 0.05).max(0.25);
                     }
                     ui.add(
-                        egui::Slider::new(self.canvas_zoom, 0.1..=3.0)
-                            .fixed_decimals(0)
-                            .text("%")
-                            .show_value(true),
+                        egui::Slider::new(self.canvas_zoom, 0.25..=3.0)
+                            .step_by(0.05)
+                            .custom_formatter(|v, _| format!("{:.0}%", v * 100.0))
+                            .custom_parser(|s| s.trim_end_matches('%').parse::<f64>().ok().map(|v| v / 100.0)),
                     );
                     if ui.button("+").clicked() {
-                        *self.canvas_zoom = (*self.canvas_zoom + 0.1).min(3.0);
+                        *self.canvas_zoom = (*self.canvas_zoom + 0.05).min(3.0);
                     }
                     if ui.button("100%").clicked() {
                         *self.canvas_zoom = 1.0;
@@ -149,18 +149,66 @@ impl<'a> AetherTabViewer<'a> {
                     .corner_radius(CornerRadius::same(8))
                     .stroke(egui::Stroke::new(1.0, canvas_stroke))
                     .show(ui, |ui| {
+                        let zoom = *self.canvas_zoom;
+
+                        // Draw subtle grid pattern for visual reference
+                        let grid_spacing = 20.0 * zoom;
+                        let canvas_area = ui.available_rect_before_wrap();
+                        let grid_color = if is_light {
+                            Color32::from_rgba_unmultiplied(0, 0, 0, 15)
+                        } else {
+                            Color32::from_rgba_unmultiplied(255, 255, 255, 15)
+                        };
+
+                        // Draw grid lines
+                        let painter = ui.painter();
+                        let start_x = canvas_area.left() - (canvas_area.left() % grid_spacing);
+                        let start_y = canvas_area.top() - (canvas_area.top() % grid_spacing);
+
+                        let mut x = start_x;
+                        while x < canvas_area.right() {
+                            painter.line_segment(
+                                [egui::pos2(x, canvas_area.top()), egui::pos2(x, canvas_area.bottom())],
+                                egui::Stroke::new(1.0, grid_color),
+                            );
+                            x += grid_spacing;
+                        }
+
+                        let mut y = start_y;
+                        while y < canvas_area.bottom() {
+                            painter.line_segment(
+                                [egui::pos2(canvas_area.left(), y), egui::pos2(canvas_area.right(), y)],
+                                egui::Stroke::new(1.0, grid_color),
+                            );
+                            y += grid_spacing;
+                        }
+
                         // Scroll area for panning with offset
                         egui::ScrollArea::both()
                             .auto_shrink([false; 2])
                             .scroll_offset(*self.canvas_pan)
                             .show(ui, |ui| {
-                                // Zoom scales the canvas by adjusting spacing
-                                let zoom = *self.canvas_zoom;
-                                ui.add_space((zoom - 1.0) * 10.0);
+                                // Apply zoom by scaling the UI
+                                ui.style_mut().spacing.item_spacing *= zoom;
+                                ui.style_mut().spacing.button_padding *= zoom;
+                                ui.style_mut().spacing.indent *= zoom;
 
+                                // Scale text sizes for widgets (with safety floor to prevent panic)
+                                let original_text_style = ui.style().text_styles.clone();
+                                for (_style, font_id) in ui.style_mut().text_styles.iter_mut() {
+                                    font_id.size = (font_id.size * zoom).max(4.0);
+                                }
+
+                                // Add some padding at the scaled level
+                                ui.add_space(8.0 * zoom);
+
+                                // Render the widget tree
                                 self.project_state
                                     .root_node
                                     .render_editor(ui, &mut self.project_state.selection);
+
+                                // Restore original text styles
+                                ui.style_mut().text_styles = original_text_style;
                             });
                     }).response.rect;
 
@@ -173,7 +221,7 @@ impl<'a> AetherTabViewer<'a> {
                     if modifiers.ctrl && scroll_delta.y != 0.0 {
                         // Ctrl + scroll = zoom
                         let zoom_delta = scroll_delta.y * 0.001;
-                        *self.canvas_zoom = (*self.canvas_zoom + zoom_delta).clamp(0.1, 3.0);
+                        *self.canvas_zoom = (*self.canvas_zoom + zoom_delta).clamp(0.25, 3.0);
                     }
                 }
 
@@ -201,7 +249,7 @@ impl<'a> AetherTabViewer<'a> {
             render_widget_category(
                 ui,
                 "Layouts",
-                &["Vertical Layout", "Horizontal Layout", "Grid Layout", "Scroll Area", "Tab Container", "Window"],
+                &["Vertical Layout", "Horizontal Layout", "Grid Layout", "Freeform Layout", "Scroll Area", "Tab Container", "Window"],
                 AetherColors::LAYOUT_COLOR,
             );
 
@@ -240,11 +288,9 @@ impl<'a> AetherTabViewer<'a> {
         ui.label(theme::heading("Widget Tree"));
         ui.add_space(4.0);
 
-        let ps = &mut self.project_state;
-
         // Keyboard navigation hint
         ui.label(
-            RichText::new("↑ ↓ Navigate • Esc Clear")
+            RichText::new("↑ ↓ Navigate • Drag to reorder")
                 .size(10.0)
                 .color(theme::muted_color(ui.ctx())),
         );
@@ -252,21 +298,20 @@ impl<'a> AetherTabViewer<'a> {
 
         // Keyboard navigation for hierarchy
         if ui.ui_contains_pointer() {
-            ui.input(|i| {
-                let all_ids = ps.get_all_widget_ids();
-                let current_selected = ps.selection.iter().next().cloned();
+            let all_ids = self.project_state.get_all_widget_ids();
+            let current_selected = self.project_state.selection.iter().next().cloned();
 
+            ui.input(|i| {
                 if i.key_pressed(egui::Key::ArrowUp) {
                     if let Some(current) = current_selected {
                         if let Some(current_idx) = all_ids.iter().position(|id| *id == current) {
                             if current_idx > 0 {
-                                let prev_id = all_ids[current_idx - 1];
-                                ps.selection.clear();
-                                ps.selection.insert(prev_id);
+                                self.project_state.selection.clear();
+                                self.project_state.selection.insert(all_ids[current_idx - 1]);
                             }
                         }
                     } else if !all_ids.is_empty() {
-                        ps.selection.insert(all_ids[0]);
+                        self.project_state.selection.insert(all_ids[0]);
                     }
                 }
 
@@ -274,28 +319,61 @@ impl<'a> AetherTabViewer<'a> {
                     if let Some(current) = current_selected {
                         if let Some(current_idx) = all_ids.iter().position(|id| *id == current) {
                             if current_idx < all_ids.len() - 1 {
-                                let next_id = all_ids[current_idx + 1];
-                                ps.selection.clear();
-                                ps.selection.insert(next_id);
+                                self.project_state.selection.clear();
+                                self.project_state.selection.insert(all_ids[current_idx + 1]);
                             }
                         }
                     } else if !all_ids.is_empty() {
-                        ps.selection.insert(all_ids[0]);
+                        self.project_state.selection.insert(all_ids[0]);
                     }
                 }
 
                 if i.key_pressed(egui::Key::Escape) {
-                    ps.selection.clear();
+                    self.project_state.selection.clear();
                 }
             });
         }
 
+        // Track pending drop operation
+        let mut pending_drop: Option<(Uuid, Uuid, DropPosition)> = None;
+
         // Tree view with styled frame
         theme::section_frame(ui.ctx()).show(ui, |ui| {
             egui::ScrollArea::vertical().show(ui, |ui| {
-                draw_hierarchy_node_styled(ui, ps.root_node.as_ref(), &mut ps.selection, 0);
+                draw_hierarchy_node_styled(
+                    ui,
+                    self.project_state.root_node.as_ref(),
+                    &mut self.project_state.selection,
+                    0,
+                    &mut pending_drop,
+                );
             });
         });
+
+        // Handle any pending drop operations
+        if let Some((source_id, target_id, position)) = pending_drop {
+            // Get the currently selected widget as the drag source if source_id is nil
+            let actual_source_id = if source_id == Uuid::nil() {
+                self.project_state.selection.iter().next().cloned()
+            } else {
+                Some(source_id)
+            };
+
+            if let Some(src_id) = actual_source_id {
+                match position {
+                    DropPosition::Before => {
+                        self.project_state.move_widget_before(src_id, target_id);
+                    }
+                    DropPosition::After => {
+                        self.project_state.move_widget_after(src_id, target_id);
+                    }
+                    DropPosition::Into => {
+                        // Move into container at end
+                        self.project_state.reparent_widget(src_id, target_id, usize::MAX);
+                    }
+                }
+            }
+        }
     }
 
     fn render_inspector(&mut self, ui: &mut Ui) {
@@ -930,6 +1008,28 @@ fn render_widget_category(ui: &mut Ui, category: &str, widgets: &[&str], accent_
             let label = theme::WidgetLabels::get(widget_type);
             let id = egui::Id::new("palette").with(*widget_type);
 
+            // Check if we're currently dragging this widget
+            let is_being_dragged = ui.ctx().is_being_dragged(id);
+
+            if is_being_dragged {
+                // Show a ghost/preview at the cursor position
+                egui::Area::new(egui::Id::new("drag_preview").with(*widget_type))
+                    .order(egui::Order::Tooltip)
+                    .fixed_pos(ui.ctx().pointer_hover_pos().unwrap_or_default())
+                    .show(ui.ctx(), |ui| {
+                        egui::Frame::new()
+                            .fill(ui.style().visuals.window_fill)
+                            .stroke(egui::Stroke::new(2.0, accent_color))
+                            .corner_radius(CornerRadius::same(4))
+                            .inner_margin(egui::Margin::same(8))
+                            .shadow(egui::Shadow::NONE)
+                            .show(ui, |ui| {
+                                // Show a preview of what the widget looks like
+                                render_widget_preview(ui, widget_type, accent_color);
+                            });
+                    });
+            }
+
             ui.dnd_drag_source(id, widget_type.to_string(), |ui| {
                 let response = ui.add(
                     egui::Button::new(
@@ -945,6 +1045,107 @@ fn render_widget_category(ui: &mut Ui, category: &str, widgets: &[&str], accent_
             ui.add_space(4.0);
         }
     });
+}
+
+/// Render a preview of a widget for drag-and-drop visualization
+fn render_widget_preview(ui: &mut Ui, widget_type: &str, accent_color: Color32) {
+    ui.set_max_width(150.0);
+
+    match widget_type {
+        "Button" => {
+            ui.button("Click Me");
+        }
+        "Label" => {
+            ui.label("Label Text");
+        }
+        "Text Edit" => {
+            let mut preview_text = "Enter text...".to_string();
+            ui.add(egui::TextEdit::singleline(&mut preview_text).desired_width(120.0));
+        }
+        "Checkbox" => {
+            let mut checked = true;
+            ui.checkbox(&mut checked, "Checkbox");
+        }
+        "Slider" => {
+            let mut value = 0.5f32;
+            ui.add(egui::Slider::new(&mut value, 0.0..=1.0).show_value(false));
+        }
+        "Progress Bar" => {
+            ui.add(egui::ProgressBar::new(0.6).desired_width(120.0));
+        }
+        "ComboBox" => {
+            let mut selected = "Option 1".to_string();
+            egui::ComboBox::from_id_salt("preview_combo")
+                .selected_text(&selected)
+                .width(100.0)
+                .show_ui(ui, |_ui| {});
+        }
+        "Image" => {
+            egui::Frame::new()
+                .fill(Color32::from_gray(100))
+                .inner_margin(egui::Margin::same(16))
+                .show(ui, |ui| {
+                    ui.label(RichText::new("🖼").size(24.0));
+                });
+        }
+        "Vertical Layout" | "Horizontal Layout" | "Grid Layout" => {
+            egui::Frame::new()
+                .stroke(egui::Stroke::new(1.0, accent_color))
+                .inner_margin(egui::Margin::same(8))
+                .show(ui, |ui| {
+                    ui.label(RichText::new(theme::WidgetLabels::get(widget_type)).small());
+                });
+        }
+        "Separator" => {
+            ui.separator();
+        }
+        "Spinner" => {
+            ui.add(egui::Spinner::new());
+        }
+        "Hyperlink" => {
+            ui.hyperlink_to("Link", "");
+        }
+        "Color Picker" => {
+            let mut color = [0.3f32, 0.6, 0.9];
+            ui.color_edit_button_rgb(&mut color);
+        }
+        "Freeform Layout" => {
+            egui::Frame::new()
+                .fill(Color32::from_gray(40))
+                .stroke(egui::Stroke::new(1.0, accent_color))
+                .inner_margin(egui::Margin::same(8))
+                .show(ui, |ui| {
+                    // Draw a small grid preview
+                    let (_id, rect) = ui.allocate_space(egui::vec2(60.0, 40.0));
+                    let painter = ui.painter();
+                    for i in 0..4 {
+                        let x = rect.left() + (i as f32) * 15.0;
+                        painter.line_segment(
+                            [egui::pos2(x, rect.top()), egui::pos2(x, rect.bottom())],
+                            egui::Stroke::new(1.0, Color32::from_rgba_unmultiplied(255, 255, 255, 40)),
+                        );
+                    }
+                    for i in 0..3 {
+                        let y = rect.top() + (i as f32) * 15.0;
+                        painter.line_segment(
+                            [egui::pos2(rect.left(), y), egui::pos2(rect.right(), y)],
+                            egui::Stroke::new(1.0, Color32::from_rgba_unmultiplied(255, 255, 255, 40)),
+                        );
+                    }
+                });
+        }
+        "Scroll Area" | "Tab Container" | "Window" => {
+            egui::Frame::new()
+                .stroke(egui::Stroke::new(1.0, accent_color))
+                .inner_margin(egui::Margin::same(8))
+                .show(ui, |ui| {
+                    ui.label(RichText::new(theme::WidgetLabels::get(widget_type)).small());
+                });
+        }
+        _ => {
+            ui.label(widget_type);
+        }
+    }
 }
 
 /// Render a code section with header and syntax highlighting
@@ -1000,12 +1201,20 @@ fn render_code_section(ui: &mut Ui, title: &str, code: &str) {
     });
 }
 
-/// Styled hierarchy node rendering with icons and depth indication
+/// Payload for hierarchy drag-and-drop
+#[derive(Clone)]
+struct HierarchyDragPayload {
+    widget_id: Uuid,
+    widget_name: String,
+}
+
+/// Styled hierarchy node rendering with icons, depth indication, and DnD support
 fn draw_hierarchy_node_styled(
     ui: &mut Ui,
     node: &dyn WidgetNode,
     selection: &mut HashSet<Uuid>,
     depth: usize,
+    pending_drop: &mut Option<(Uuid, Uuid, DropPosition)>,
 ) {
     let id = node.id();
     let is_selected = selection.contains(&id);
@@ -1014,6 +1223,7 @@ fn draw_hierarchy_node_styled(
 
     let children = node.children();
     let has_children = children.map_or(false, |c| !c.is_empty());
+    let is_container = node.children().is_some();
 
     // Indent based on depth
     let indent = depth as f32 * 12.0;
@@ -1021,6 +1231,38 @@ fn draw_hierarchy_node_styled(
     // Read modifiers BEFORE entering any nested closures to avoid deadlock
     let cmd_held = ui.input(|i| i.modifiers.command);
 
+    // Create drag payload
+    let drag_id = egui::Id::new("hierarchy_drag").with(id);
+    let payload = HierarchyDragPayload {
+        widget_id: id,
+        widget_name: label.to_string(),
+    };
+
+    // Check if this widget is being dragged
+    let is_being_dragged = ui.ctx().is_being_dragged(drag_id);
+
+    // Don't render if being dragged (will be shown as floating preview)
+    if is_being_dragged {
+        // Show dragged item preview at cursor
+        if let Some(pos) = ui.ctx().pointer_hover_pos() {
+            egui::Area::new(egui::Id::new("hierarchy_drag_preview"))
+                .order(egui::Order::Tooltip)
+                .fixed_pos(pos + egui::vec2(10.0, 10.0))
+                .show(ui.ctx(), |ui| {
+                    egui::Frame::new()
+                        .fill(ui.style().visuals.window_fill)
+                        .stroke(egui::Stroke::new(2.0, category_color))
+                        .corner_radius(CornerRadius::same(4))
+                        .inner_margin(egui::Margin::same(4))
+                        .shadow(egui::Shadow::NONE)
+                        .show(ui, |ui| {
+                            ui.label(RichText::new(&payload.widget_name).color(category_color));
+                        });
+                });
+        }
+    }
+
+    // Main hierarchy item rendering
     if has_children {
         let display_text = label.to_string();
         let text_color = if is_selected {
@@ -1029,53 +1271,106 @@ fn draw_hierarchy_node_styled(
             category_color
         };
 
+        // Drop zone for inserting BEFORE this container
+        let before_drop_id = egui::Id::new("drop_before").with(id);
+        let (before_rect, before_response) = ui.allocate_exact_size(
+            egui::vec2(ui.available_width(), 2.0),
+            egui::Sense::hover(),
+        );
+
+        // Check for drop on "before" zone
+        if let Some(dragged_payload) = ui.ctx().dragged_id().and_then(|did| {
+            if before_response.hovered() && did.with("hierarchy_drag") != drag_id {
+                // Visual drop indicator
+                ui.painter().rect_filled(before_rect.expand2(egui::vec2(0.0, 2.0)), 0.0, AetherColors::ACCENT);
+                Some(true)
+            } else {
+                None
+            }
+        }) {
+            if dragged_payload && ui.input(|i| i.pointer.any_released()) {
+                // Get the dragged widget ID from any currently dragged item
+                // We need to track this differently
+            }
+        }
+
         ui.horizontal(|ui| {
             ui.add_space(indent);
 
-            let header = egui::CollapsingHeader::new(
-                RichText::new(&display_text).color(text_color).strong(),
-            )
-            .id_salt(id)
-            .default_open(true);
+            // Make the header draggable
+            ui.dnd_drag_source(drag_id, payload.clone(), |ui| {
+                let header = egui::CollapsingHeader::new(
+                    RichText::new(&display_text).color(text_color).strong(),
+                )
+                .id_salt(id)
+                .default_open(true);
 
-            let response = header.show(ui, |ui| {
-                if let Some(children) = children {
-                    for child in children {
-                        draw_hierarchy_node_styled(ui, child.as_ref(), selection, depth + 1);
+                let response = header.show(ui, |ui| {
+                    // Container drop zone (for dropping INTO this container)
+                    if is_container {
+                        let (drop_rect, drop_response) = ui.allocate_exact_size(
+                            egui::vec2(ui.available_width(), 8.0),
+                            egui::Sense::hover(),
+                        );
+
+                        // Visual indicator for drop target
+                        if drop_response.hovered() && ui.ctx().dragged_id().is_some() {
+                            ui.painter().rect_filled(
+                                drop_rect,
+                                2.0,
+                                Color32::from_rgba_unmultiplied(100, 200, 100, 100),
+                            );
+                            ui.painter().rect_stroke(
+                                drop_rect,
+                                2.0,
+                                egui::Stroke::new(2.0, AetherColors::ACCENT),
+                                egui::StrokeKind::Inside,
+                            );
+
+                            // Handle drop
+                            if ui.input(|i| i.pointer.any_released()) {
+                                *pending_drop = Some((Uuid::nil(), id, DropPosition::Into));
+                            }
+                        }
                     }
-                }
-            });
 
-            // Handle multi-selection with Ctrl/Cmd support
-            if response.header_response.clicked() {
-                if cmd_held {
-                    // Ctrl/Cmd + click: toggle selection
-                    if selection.contains(&id) {
-                        selection.remove(&id);
+                    if let Some(children) = children {
+                        for child in children {
+                            draw_hierarchy_node_styled(ui, child.as_ref(), selection, depth + 1, pending_drop);
+                        }
+                    }
+                });
+
+                // Handle multi-selection with Ctrl/Cmd support
+                if response.header_response.clicked() {
+                    if cmd_held {
+                        if selection.contains(&id) {
+                            selection.remove(&id);
+                        } else {
+                            selection.insert(id);
+                        }
                     } else {
+                        selection.clear();
                         selection.insert(id);
                     }
-                } else {
-                    // Normal click: clear and select only this widget
-                    selection.clear();
-                    selection.insert(id);
                 }
-            }
 
-            // Selection indicator
-            if is_selected {
-                let rect = response.header_response.rect;
-                ui.painter().rect_stroke(
-                    rect.expand(2.0),
-                    4.0,
-                    egui::Stroke::new(2.0, AetherColors::ACCENT),
-                    egui::StrokeKind::Outside,
-                );
-            }
+                // Selection indicator
+                if is_selected {
+                    let rect = response.header_response.rect;
+                    ui.painter().rect_stroke(
+                        rect.expand(2.0),
+                        4.0,
+                        egui::Stroke::new(2.0, AetherColors::ACCENT),
+                        egui::StrokeKind::Outside,
+                    );
+                }
+            });
         });
     } else {
+        // Leaf node - simpler rendering with drop zones
         ui.horizontal(|ui| {
-            ui.add_space(indent + 16.0); // Extra indent for leaf nodes
+            ui.add_space(indent + 16.0);
 
             let display_text = label;
             let text_color = if is_selected {
@@ -1084,26 +1379,49 @@ fn draw_hierarchy_node_styled(
                 category_color
             };
 
-            let response =
-                ui.selectable_label(is_selected, RichText::new(display_text).color(text_color));
+            // Make the leaf draggable
+            ui.dnd_drag_source(drag_id, payload, |ui| {
+                let response = ui.selectable_label(
+                    is_selected,
+                    RichText::new(display_text).color(text_color),
+                );
 
-            // Handle multi-selection with Ctrl/Cmd support
-            if response.clicked() {
-                if cmd_held {
-                    // Ctrl/Cmd + click: toggle selection
-                    if selection.contains(&id) {
-                        selection.remove(&id);
+                if response.clicked() {
+                    if cmd_held {
+                        if selection.contains(&id) {
+                            selection.remove(&id);
+                        } else {
+                            selection.insert(id);
+                        }
                     } else {
+                        selection.clear();
                         selection.insert(id);
                     }
-                } else {
-                    // Normal click: clear and select only this widget
-                    selection.clear();
-                    selection.insert(id);
                 }
-            }
+
+                // Drop indicator below this item
+                if response.hovered() && ui.ctx().dragged_id().is_some() {
+                    let rect = response.rect;
+                    ui.painter().line_segment(
+                        [rect.left_bottom(), rect.right_bottom()],
+                        egui::Stroke::new(2.0, AetherColors::ACCENT),
+                    );
+
+                    if ui.input(|i| i.pointer.any_released()) {
+                        *pending_drop = Some((Uuid::nil(), id, DropPosition::After));
+                    }
+                }
+            });
         });
     }
+}
+
+/// Position for drop operations
+#[derive(Clone, Copy, Debug)]
+enum DropPosition {
+    Before,
+    After,
+    Into,
 }
 
 // Helper to set up the default "Qt Designer" layout
