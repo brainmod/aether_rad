@@ -215,12 +215,34 @@ fn render_action_editor(ui: &mut egui::Ui, action: &mut crate::model::Action, kn
     }
 }
 
+/// Alignment options for layout containers
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum LayoutAlignment {
+    Start,
+    Center,
+    End,
+}
+
+impl Default for LayoutAlignment {
+    fn default() -> Self {
+        Self::Start
+    }
+}
+
 /// A container that arranges children vertically.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct VerticalLayout {
     pub id: Uuid,
     pub children: Vec<Box<dyn WidgetNode>>,
     pub spacing: f32,
+    #[serde(default)]
+    pub padding: f32,
+    #[serde(default)]
+    pub min_width: Option<f32>,
+    #[serde(default)]
+    pub max_width: Option<f32>,
+    #[serde(default)]
+    pub alignment: LayoutAlignment,
 }
 
 impl Default for VerticalLayout {
@@ -229,6 +251,10 @@ impl Default for VerticalLayout {
             id: Uuid::new_v4(),
             children: Vec::new(),
             spacing: 5.0,
+            padding: 0.0,
+            min_width: None,
+            max_width: None,
+            alignment: LayoutAlignment::Start,
         }
     }
 }
@@ -240,6 +266,10 @@ impl WidgetNode for VerticalLayout {
             id: self.id,
             children: self.children.iter().map(|c| c.clone_box()).collect(),
             spacing: self.spacing,
+            padding: self.padding,
+            min_width: self.min_width,
+            max_width: self.max_width,
+            alignment: self.alignment,
         })
     }
 
@@ -253,14 +283,31 @@ impl WidgetNode for VerticalLayout {
 
     // RECURSION: Render children inside a vertical layout
     fn render_editor(&mut self, ui: &mut Ui, selection: &mut HashSet<Uuid>) {
-        let response = ui
-            .vertical(|ui| {
-                ui.spacing_mut().item_spacing.y = self.spacing;
-                for child in &mut self.children {
-                    child.render_editor(ui, selection);
+        // Apply layout alignment
+        let layout = match self.alignment {
+            LayoutAlignment::Start => egui::Layout::top_down(egui::Align::LEFT),
+            LayoutAlignment::Center => egui::Layout::top_down(egui::Align::Center),
+            LayoutAlignment::End => egui::Layout::top_down(egui::Align::RIGHT),
+        };
+
+        let response = egui::Frame::new()
+            .inner_margin(egui::Margin::same(self.padding.min(127.0) as i8))
+            .show(ui, |ui| {
+                // Apply size constraints
+                if let Some(min_w) = self.min_width {
+                    ui.set_min_width(min_w);
                 }
-            })
-            .response;
+                if let Some(max_w) = self.max_width {
+                    ui.set_max_width(max_w);
+                }
+
+                ui.with_layout(layout, |ui| {
+                    ui.spacing_mut().item_spacing.y = self.spacing;
+                    for child in &mut self.children {
+                        child.render_editor(ui, selection);
+                    }
+                });
+            }).response;
 
         // Interaction & Gizmo for the container itself
         let is_selected = selection.contains(&self.id);
@@ -297,20 +344,70 @@ impl WidgetNode for VerticalLayout {
                     "Scroll Area" => Box::new(ScrollAreaWidget::default()),
                     "Tab Container" => Box::new(TabContainerWidget::default()),
                     "Window" => Box::new(WindowWidget::default()),
+                    "Freeform Layout" => Box::new(FreeformLayout::default()),
                     _ => return,
                 };
                 self.children.push(new_widget);
             }
         }
     }
+
     fn inspect(&mut self, ui: &mut Ui, _known_variables: &[String], _known_assets: &[(String, String)]) {
         ui.heading("Vertical Layout Settings");
         ui.label(format!("ID: {}", self.id));
+
+        ui.separator();
+        ui.label("Layout Options:");
+
         ui.horizontal(|ui| {
             ui.label("Spacing:");
-            ui.add(egui::DragValue::new(&mut self.spacing).speed(0.1));
+            ui.add(egui::DragValue::new(&mut self.spacing).speed(0.5).range(0.0..=50.0));
         });
 
+        ui.horizontal(|ui| {
+            ui.label("Padding:");
+            ui.add(egui::DragValue::new(&mut self.padding).speed(0.5).range(0.0..=50.0));
+        });
+
+        ui.horizontal(|ui| {
+            ui.label("Alignment:");
+            egui::ComboBox::from_id_salt("vlayout_align")
+                .selected_text(match self.alignment {
+                    LayoutAlignment::Start => "Left",
+                    LayoutAlignment::Center => "Center",
+                    LayoutAlignment::End => "Right",
+                })
+                .show_ui(ui, |ui| {
+                    ui.selectable_value(&mut self.alignment, LayoutAlignment::Start, "Left");
+                    ui.selectable_value(&mut self.alignment, LayoutAlignment::Center, "Center");
+                    ui.selectable_value(&mut self.alignment, LayoutAlignment::End, "Right");
+                });
+        });
+
+        ui.separator();
+        ui.label("Size Constraints:");
+
+        ui.horizontal(|ui| {
+            let mut has_min = self.min_width.is_some();
+            if ui.checkbox(&mut has_min, "Min Width:").changed() {
+                self.min_width = if has_min { Some(100.0) } else { None };
+            }
+            if let Some(ref mut min_w) = self.min_width {
+                ui.add(egui::DragValue::new(min_w).speed(1.0).range(0.0..=1000.0));
+            }
+        });
+
+        ui.horizontal(|ui| {
+            let mut has_max = self.max_width.is_some();
+            if ui.checkbox(&mut has_max, "Max Width:").changed() {
+                self.max_width = if has_max { Some(500.0) } else { None };
+            }
+            if let Some(ref mut max_w) = self.max_width {
+                ui.add(egui::DragValue::new(max_w).speed(1.0).range(0.0..=2000.0));
+            }
+        });
+
+        ui.separator();
         ui.label(format!("Children count: {}", self.children.len()));
     }
 
@@ -2831,5 +2928,357 @@ impl WidgetNode for ColorPickerWidget {
                 ui.color_edit_button_rgba_unmultiplied(&mut color);
             }
         }
+    }
+}
+
+// --- FreeformLayout ---
+/// A container with absolute positioning for children
+/// Each child can have its own x, y position within the container
+#[derive(Debug, Serialize, Deserialize)]
+pub struct FreeformLayout {
+    pub id: Uuid,
+    pub children: Vec<FreeformChild>,
+    pub width: f32,
+    pub height: f32,
+    pub show_grid: bool,
+    pub snap_to_grid: bool,
+    pub grid_size: f32,
+}
+
+/// A child widget with position data
+#[derive(Debug, Serialize, Deserialize)]
+pub struct FreeformChild {
+    pub widget: Box<dyn WidgetNode>,
+    pub x: f32,
+    pub y: f32,
+    pub width: Option<f32>,
+    pub height: Option<f32>,
+}
+
+impl Clone for FreeformChild {
+    fn clone(&self) -> Self {
+        Self {
+            widget: self.widget.clone_box(),
+            x: self.x,
+            y: self.y,
+            width: self.width,
+            height: self.height,
+        }
+    }
+}
+
+impl Default for FreeformLayout {
+    fn default() -> Self {
+        Self {
+            id: Uuid::new_v4(),
+            children: Vec::new(),
+            width: 400.0,
+            height: 300.0,
+            show_grid: true,
+            snap_to_grid: true,
+            grid_size: 10.0,
+        }
+    }
+}
+
+#[typetag::serde]
+impl WidgetNode for FreeformLayout {
+    fn clone_box(&self) -> Box<dyn WidgetNode> {
+        Box::new(Self {
+            id: self.id,
+            children: self.children.iter().map(|c| FreeformChild {
+                widget: c.widget.clone_box(),
+                x: c.x,
+                y: c.y,
+                width: c.width,
+                height: c.height,
+            }).collect(),
+            width: self.width,
+            height: self.height,
+            show_grid: self.show_grid,
+            snap_to_grid: self.snap_to_grid,
+            grid_size: self.grid_size,
+        })
+    }
+
+    fn id(&self) -> Uuid {
+        self.id
+    }
+
+    fn name(&self) -> &str {
+        "Freeform Layout"
+    }
+
+    fn render_editor(&mut self, ui: &mut Ui, selection: &mut HashSet<Uuid>) {
+        let container_rect = egui::Rect::from_min_size(
+            ui.cursor().min,
+            egui::vec2(self.width, self.height),
+        );
+
+        // Reserve space for the freeform area
+        let (response, painter) = ui.allocate_painter(
+            egui::vec2(self.width, self.height),
+            egui::Sense::click_and_drag(),
+        );
+
+        let container_origin = response.rect.min;
+
+        // Background
+        painter.rect_filled(
+            response.rect,
+            0.0,
+            if ui.style().visuals.dark_mode {
+                egui::Color32::from_gray(35)
+            } else {
+                egui::Color32::from_gray(250)
+            },
+        );
+
+        // Draw grid if enabled
+        if self.show_grid {
+            let grid_color = if ui.style().visuals.dark_mode {
+                egui::Color32::from_rgba_unmultiplied(255, 255, 255, 20)
+            } else {
+                egui::Color32::from_rgba_unmultiplied(0, 0, 0, 20)
+            };
+
+            let mut x = 0.0;
+            while x <= self.width {
+                painter.line_segment(
+                    [
+                        container_origin + egui::vec2(x, 0.0),
+                        container_origin + egui::vec2(x, self.height),
+                    ],
+                    egui::Stroke::new(1.0, grid_color),
+                );
+                x += self.grid_size;
+            }
+
+            let mut y = 0.0;
+            while y <= self.height {
+                painter.line_segment(
+                    [
+                        container_origin + egui::vec2(0.0, y),
+                        container_origin + egui::vec2(self.width, y),
+                    ],
+                    egui::Stroke::new(1.0, grid_color),
+                );
+                y += self.grid_size;
+            }
+        }
+
+        // Border
+        painter.rect_stroke(
+            response.rect,
+            0.0,
+            egui::Stroke::new(1.0, egui::Color32::GRAY),
+            egui::StrokeKind::Inside,
+        );
+
+        // Track which child is being dragged
+        let mut dragged_child_idx: Option<usize> = None;
+
+        // Render children at their absolute positions
+        for (idx, child) in self.children.iter_mut().enumerate() {
+            let child_pos = container_origin + egui::vec2(child.x, child.y);
+
+            // Create a child area at the specified position
+            let child_id = egui::Id::new("freeform_child").with(child.widget.id());
+            let child_area = egui::Area::new(child_id)
+                .fixed_pos(child_pos)
+                .order(egui::Order::Foreground);
+
+            let area_response = child_area.show(ui.ctx(), |ui| {
+                egui::Frame::new()
+                    .inner_margin(egui::Margin::same(2))
+                    .show(ui, |ui| {
+                        child.widget.render_editor(ui, selection);
+                    })
+            });
+
+            // Check if this child should be dragged
+            let drag_id = egui::Id::new("freeform_drag").with(child.widget.id());
+            let is_selected = selection.contains(&child.widget.id());
+
+            if is_selected {
+                // Allow dragging when selected
+                let drag_response = ui.interact(
+                    area_response.response.rect,
+                    drag_id,
+                    egui::Sense::drag(),
+                );
+
+                if drag_response.dragged() {
+                    dragged_child_idx = Some(idx);
+                }
+            }
+        }
+
+        // Handle drag movement
+        if let Some(idx) = dragged_child_idx {
+            if let Some(pointer_pos) = ui.ctx().pointer_interact_pos() {
+                let delta = ui.ctx().input(|i| i.pointer.delta());
+                let child = &mut self.children[idx];
+
+                child.x += delta.x;
+                child.y += delta.y;
+
+                // Snap to grid if enabled
+                if self.snap_to_grid {
+                    child.x = (child.x / self.grid_size).round() * self.grid_size;
+                    child.y = (child.y / self.grid_size).round() * self.grid_size;
+                }
+
+                // Clamp to container bounds
+                child.x = child.x.max(0.0).min(self.width - 20.0);
+                child.y = child.y.max(0.0).min(self.height - 20.0);
+            }
+        }
+
+        // Handle selection of the container itself
+        handle_selection(ui, self.id, response.clicked(), selection);
+
+        if selection.contains(&self.id) {
+            draw_gizmo(ui, response.rect);
+        }
+
+        // Drop zone for adding widgets
+        let drop_rect = egui::Rect::from_min_size(
+            container_origin + egui::vec2(0.0, self.height - 24.0),
+            egui::vec2(self.width, 24.0),
+        );
+
+        let drop_response = ui.allocate_rect(drop_rect, egui::Sense::hover());
+
+        // Check for drops
+        let (_drop_response, payload_option) = ui.dnd_drop_zone::<String, _>(egui::Frame::NONE, |ui| {
+            ui.allocate_space(egui::vec2(0.0, 0.0)); // Invisible drop zone
+        });
+
+        if let Some(payload) = payload_option {
+            if ui.input(|i| i.pointer.any_released()) {
+                let drop_pos = ui.ctx().pointer_hover_pos().unwrap_or(container_origin);
+                let relative_pos = drop_pos - container_origin;
+
+                let new_widget: Option<Box<dyn WidgetNode>> = match payload.as_str() {
+                    "Button" => Some(Box::new(ButtonWidget::default())),
+                    "Label" => Some(Box::new(LabelWidget::default())),
+                    "Text Edit" => Some(Box::new(TextEditWidget::default())),
+                    "Checkbox" => Some(Box::new(CheckboxWidget::default())),
+                    "Slider" => Some(Box::new(SliderWidget::default())),
+                    "Progress Bar" => Some(Box::new(ProgressBarWidget::default())),
+                    "ComboBox" => Some(Box::new(ComboBoxWidget::default())),
+                    "Image" => Some(Box::new(ImageWidget::default())),
+                    "Separator" => Some(Box::new(SeparatorWidget::default())),
+                    "Spinner" => Some(Box::new(SpinnerWidget::default())),
+                    "Hyperlink" => Some(Box::new(HyperlinkWidget::default())),
+                    "Color Picker" => Some(Box::new(ColorPickerWidget::default())),
+                    _ => None,
+                };
+
+                if let Some(widget) = new_widget {
+                    let x = if self.snap_to_grid {
+                        (relative_pos.x / self.grid_size).round() * self.grid_size
+                    } else {
+                        relative_pos.x
+                    };
+                    let y = if self.snap_to_grid {
+                        (relative_pos.y / self.grid_size).round() * self.grid_size
+                    } else {
+                        relative_pos.y
+                    };
+
+                    self.children.push(FreeformChild {
+                        widget,
+                        x: x.max(0.0),
+                        y: y.max(0.0),
+                        width: None,
+                        height: None,
+                    });
+                }
+            }
+        }
+    }
+
+    fn inspect(&mut self, ui: &mut Ui, _known_variables: &[String], _known_assets: &[(String, String)]) {
+        ui.heading("Freeform Layout Properties");
+        ui.label(format!("ID: {}", self.id));
+
+        ui.separator();
+        ui.label("Container Size:");
+
+        ui.horizontal(|ui| {
+            ui.label("Width:");
+            ui.add(egui::DragValue::new(&mut self.width).speed(1.0).range(100.0..=2000.0));
+        });
+
+        ui.horizontal(|ui| {
+            ui.label("Height:");
+            ui.add(egui::DragValue::new(&mut self.height).speed(1.0).range(100.0..=2000.0));
+        });
+
+        ui.separator();
+        ui.label("Grid Options:");
+
+        ui.checkbox(&mut self.show_grid, "Show Grid");
+        ui.checkbox(&mut self.snap_to_grid, "Snap to Grid");
+
+        ui.horizontal(|ui| {
+            ui.label("Grid Size:");
+            ui.add(egui::DragValue::new(&mut self.grid_size).speed(1.0).range(5.0..=50.0));
+        });
+
+        ui.separator();
+        ui.label(format!("Children count: {}", self.children.len()));
+
+        // Show child positions
+        if !self.children.is_empty() {
+            ui.collapsing("Child Positions", |ui| {
+                for (idx, child) in self.children.iter_mut().enumerate() {
+                    ui.horizontal(|ui| {
+                        ui.label(format!("{}:", child.widget.name()));
+                        ui.label("x:");
+                        ui.add(egui::DragValue::new(&mut child.x).speed(1.0));
+                        ui.label("y:");
+                        ui.add(egui::DragValue::new(&mut child.y).speed(1.0));
+                    });
+                }
+            });
+        }
+    }
+
+    fn codegen(&self) -> proc_macro2::TokenStream {
+        // For code generation, we use egui::Area for absolute positioning
+        let child_streams: Vec<_> = self.children.iter().map(|child| {
+            let child_code = child.widget.codegen();
+            let x = child.x;
+            let y = child.y;
+            let child_id = format!("freeform_child_{}", child.widget.id());
+
+            quote! {
+                egui::Area::new(egui::Id::new(#child_id))
+                    .fixed_pos(egui::pos2(#x, #y))
+                    .show(ctx, |ui| {
+                        #child_code
+                    });
+            }
+        }).collect();
+
+        let width = self.width;
+        let height = self.height;
+
+        quote! {
+            // Freeform container
+            ui.allocate_space(egui::vec2(#width, #height));
+            #(#child_streams)*
+        }
+    }
+
+    fn children(&self) -> Option<&Vec<Box<dyn WidgetNode>>> {
+        None // Freeform uses FreeformChild instead of Box<dyn WidgetNode>
+    }
+
+    fn children_mut(&mut self) -> Option<&mut Vec<Box<dyn WidgetNode>>> {
+        None
     }
 }
