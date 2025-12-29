@@ -5,8 +5,10 @@ edition = "2021"
 
 [dependencies]
 # GUI Framework [cite: 31]
-egui = "0.33.3"
-eframe = "0.33.3"
+egui = "0.32.3"
+eframe = "0.32.3"
+egui_extras = { version = "0.32.3", features = ["all_loaders"] }
+egui_plot = "0.33.0"
 
 # Serialization & SOM Infrastructure [cite: 8, 55]
 serde = { version = "1.0", features = ["derive"] }
@@ -22,8 +24,7 @@ proc-macro2 = "1.0"
 syn = { version = "2", features = ["full", "parsing"] }
 prettyplease = "0.2"
 
-# Docking (Prepared for Phase 2) [cite: 75]
-egui_dock = "0.18.0"
+
 
 # Persistence
 rfd = "0.15"

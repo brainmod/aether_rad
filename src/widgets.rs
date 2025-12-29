@@ -377,27 +377,45 @@ impl WidgetNode for VerticalLayout {
             LayoutAlignment::End => egui::Layout::top_down(egui::Align::RIGHT),
         };
 
-        let response = egui::Frame::new()
-            .inner_margin(egui::Margin::same(self.padding.min(127.0) as i8))
-            .show(ui, |ui| {
-                // Apply size constraints
-                if let Some(min_w) = self.min_width {
-                    ui.set_min_width(min_w);
-                }
-                if let Some(max_w) = self.max_width {
-                    ui.set_max_width(max_w);
-                }
-
-                ui.with_layout(layout, |ui| {
-                    ui.spacing_mut().item_spacing.y = self.spacing;
-                    for child in &mut self.children {
-                        child.render_editor(ui, selection);
+        // Wrap the entire layout in a drop zone so you can drop anywhere on it
+        let (response, payload_option) = ui.dnd_drop_zone::<String, _>(egui::Frame::NONE, |ui| {
+            egui::Frame::new()
+                .inner_margin(egui::Margin::same(self.padding.min(127.0) as i8))
+                .show(ui, |ui| {
+                    // Apply size constraints
+                    if let Some(min_w) = self.min_width {
+                        ui.set_min_width(min_w);
                     }
-                });
-            }).response;
+                    if let Some(max_w) = self.max_width {
+                        ui.set_max_width(max_w);
+                    }
+
+                    ui.with_layout(layout, |ui| {
+                        ui.spacing_mut().item_spacing.y = self.spacing;
+                        for child in &mut self.children {
+                            child.render_editor(ui, selection);
+                        }
+
+                        // Render ghost preview if dragging
+                        if let Some(dragged_type) = ui.memory(|mem| mem.data.get_temp::<String>(egui::Id::new("dragged_widget_type"))) {
+                            // Only show if hovering this layout (heuristic: if pointer is inside min_rect)
+                            // Note: dnd_drop_zone expands, so min_rect covers the area.
+                            // We use a simplified check here since dnd_drop_zone doesn't expose hover state during closure.
+                            if ui.rect_contains_pointer(ui.min_rect()) {
+                                ui.add_space(self.spacing);
+                                ui.vertical(|ui| {
+                                    ui.set_enabled(false); // Make it look like a ghost
+                                    ui.ctx().set_cursor_icon(egui::CursorIcon::Copy); // Indicate copy/add
+                                    render_widget_preview(ui, &dragged_type, egui::Color32::WHITE);
+                                });
+                            }
+                        }
+                    });
+                }).response
+        });
 
         // Handle container selection only via border (not content area where children are)
-        let widget_rect = response.rect;
+        let widget_rect = response.response.rect;
         let border_clicked = create_container_selection_overlay(ui, widget_rect, self.padding.max(8.0), self.id);
         handle_selection(ui, self.id, border_clicked, selection);
 
@@ -406,11 +424,7 @@ impl WidgetNode for VerticalLayout {
             draw_gizmo(ui, widget_rect);
         }
 
-        // Drop Zone
-        let (_response, payload_option) = ui.dnd_drop_zone::<String, _>(egui::Frame::NONE, |ui| {
-            ui.label("Drag widget here to add...");
-        });
-
+        // Handle Drop
         if let Some(payload) = payload_option {
             // Check if dropped
             if ui.input(|i| i.pointer.any_released()) {
@@ -430,6 +444,8 @@ impl WidgetNode for VerticalLayout {
                     "Spinner" => Box::new(SpinnerWidget::default()),
                     "Hyperlink" => Box::new(HyperlinkWidget::default()),
                     "Color Picker" => Box::new(ColorPickerWidget::default()),
+                    "Table" => Box::new(TableWidget::default()),
+                    "Plot" => Box::new(PlotWidget::default()),
                     "Scroll Area" => Box::new(ScrollAreaWidget::default()),
                     "Tab Container" => Box::new(TabContainerWidget::default()),
                     "Window" => Box::new(WindowWidget::default()),
@@ -451,11 +467,13 @@ impl WidgetNode for VerticalLayout {
         ui.horizontal(|ui| {
             ui.label("Spacing:");
             ui.add(egui::DragValue::new(&mut self.spacing).speed(0.5).range(0.0..=50.0));
+            reset_button(ui, &mut self.spacing, 5.0);
         });
 
         ui.horizontal(|ui| {
             ui.label("Padding:");
             ui.add(egui::DragValue::new(&mut self.padding).speed(0.5).range(0.0..=50.0));
+            reset_button(ui, &mut self.padding, 0.0);
         });
 
         ui.horizontal(|ui| {
@@ -561,56 +579,67 @@ impl WidgetNode for HorizontalLayout {
     }
 
     fn render_editor(&mut self, ui: &mut Ui, selection: &mut HashSet<Uuid>) {
-        let response = ui
-            .horizontal(|ui| {
+        let (response, payload_option) = ui.dnd_drop_zone::<String, _>(egui::Frame::NONE, |ui| {
+            ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = self.spacing;
                 for child in &mut self.children {
                     child.render_editor(ui, selection);
                 }
 
-                // Drop Zone inside Horizontal Layout?
-                // A bit tricky visually in horizontal, but let's try adding it at the end.
-                let (_response, payload_option) =
-                    ui.dnd_drop_zone::<String, _>(egui::Frame::NONE, |ui| {
-                        ui.label(" + ");
-                    });
-
-                if let Some(payload) = payload_option {
-                    if ui.input(|i| i.pointer.any_released()) {
-                        let new_widget: Box<dyn WidgetNode> = match payload.as_str() {
-                            "Button" => Box::new(ButtonWidget::default()),
-                            "Label" => Box::new(LabelWidget::default()),
-                            "Text Edit" => Box::new(TextEditWidget::default()),
-                            "Checkbox" => Box::new(CheckboxWidget::default()),
-                            "Slider" => Box::new(SliderWidget::default()),
-                            "Progress Bar" => Box::new(ProgressBarWidget::default()),
-                            "ComboBox" => Box::new(ComboBoxWidget::default()),
-                            "Image" => Box::new(ImageWidget::default()),
-                            "Vertical Layout" => Box::new(VerticalLayout::default()),
-                            "Horizontal Layout" => Box::new(HorizontalLayout::default()),
-                            "Grid Layout" => Box::new(GridLayout::default()),
-                            "Separator" => Box::new(SeparatorWidget::default()),
-                            "Spinner" => Box::new(SpinnerWidget::default()),
-                            "Hyperlink" => Box::new(HyperlinkWidget::default()),
-                            "Color Picker" => Box::new(ColorPickerWidget::default()),
-                            "Scroll Area" => Box::new(ScrollAreaWidget::default()),
-                            "Tab Container" => Box::new(TabContainerWidget::default()),
-                            "Window" => Box::new(WindowWidget::default()),
-                            _ => return,
-                        };
-                        self.children.push(new_widget);
+                // Render ghost preview if dragging
+                if let Some(dragged_type) = ui.memory(|mem| mem.data.get_temp::<String>(egui::Id::new("dragged_widget_type"))) {
+                    if ui.rect_contains_pointer(ui.min_rect()) {
+                        ui.add_space(self.spacing);
+                        ui.vertical(|ui| { // Wrap in vertical to keep height consistent or horizontal?
+                            // Horizontal layout adds items horizontally.
+                            // ui.vertical inside horizontal works but might look odd if it expands height.
+                            // But render_widget_preview typically renders a block.
+                            ui.disable();
+                            ui.ctx().set_cursor_icon(egui::CursorIcon::Copy);
+                            render_widget_preview(ui, &dragged_type, egui::Color32::WHITE);
+                        });
                     }
                 }
-            })
-            .response;
+            }).response
+        });
 
         // Handle container selection only via border (not content area where children are)
-        let widget_rect = response.rect;
+        let widget_rect = response.response.rect;
         let border_clicked = create_container_selection_overlay(ui, widget_rect, 8.0, self.id);
         handle_selection(ui, self.id, border_clicked, selection);
 
         if selection.contains(&self.id) {
             draw_gizmo(ui, widget_rect);
+        }
+
+        if let Some(payload) = payload_option {
+            if ui.input(|i| i.pointer.any_released()) {
+                let new_widget: Box<dyn WidgetNode> = match payload.as_str() {
+                    "Button" => Box::new(ButtonWidget::default()),
+                    "Label" => Box::new(LabelWidget::default()),
+                    "Text Edit" => Box::new(TextEditWidget::default()),
+                    "Checkbox" => Box::new(CheckboxWidget::default()),
+                    "Slider" => Box::new(SliderWidget::default()),
+                    "Progress Bar" => Box::new(ProgressBarWidget::default()),
+                    "ComboBox" => Box::new(ComboBoxWidget::default()),
+                    "Image" => Box::new(ImageWidget::default()),
+                    "Vertical Layout" => Box::new(VerticalLayout::default()),
+                    "Horizontal Layout" => Box::new(HorizontalLayout::default()),
+                    "Grid Layout" => Box::new(GridLayout::default()),
+                    "Separator" => Box::new(SeparatorWidget::default()),
+                    "Spinner" => Box::new(SpinnerWidget::default()),
+                    "Hyperlink" => Box::new(HyperlinkWidget::default()),
+                    "Color Picker" => Box::new(ColorPickerWidget::default()),
+                    "Table" => Box::new(TableWidget::default()),
+                    "Plot" => Box::new(PlotWidget::default()),
+                    "Scroll Area" => Box::new(ScrollAreaWidget::default()),
+                    "Tab Container" => Box::new(TabContainerWidget::default()),
+                    "Window" => Box::new(WindowWidget::default()),
+                    "Freeform Layout" => Box::new(FreeformLayout::default()),
+                    _ => return,
+                };
+                self.children.push(new_widget);
+            }
         }
     }
 
@@ -620,6 +649,7 @@ impl WidgetNode for HorizontalLayout {
         ui.horizontal(|ui| {
             ui.label("Spacing:");
             ui.add(egui::DragValue::new(&mut self.spacing).speed(0.1));
+            reset_button(ui, &mut self.spacing, 5.0);
         });
         ui.label(format!("Children count: {}", self.children.len()));
     }
@@ -681,8 +711,8 @@ impl WidgetNode for GridLayout {
     }
 
     fn render_editor(&mut self, ui: &mut Ui, selection: &mut HashSet<Uuid>) {
-        let response = ui
-            .vertical(|ui| {
+        let (response, payload_option) = ui.dnd_drop_zone::<String, _>(egui::Frame::NONE, |ui| {
+            ui.vertical(|ui| {
                 ui.spacing_mut().item_spacing = egui::vec2(self.spacing, self.spacing);
 
                 // Render children in grid format
@@ -702,48 +732,57 @@ impl WidgetNode for GridLayout {
                     }
                 }
 
-                // Drop Zone for adding widgets to grid
-                let (_response, payload_option) =
-                    ui.dnd_drop_zone::<String, _>(egui::Frame::NONE, |ui| {
-                        ui.label("Drag widget here to add...");
-                    });
-
-                if let Some(payload) = payload_option {
-                    if ui.input(|i| i.pointer.any_released()) {
-                        let new_widget: Box<dyn WidgetNode> = match payload.as_str() {
-                            "Button" => Box::new(ButtonWidget::default()),
-                            "Label" => Box::new(LabelWidget::default()),
-                            "Text Edit" => Box::new(TextEditWidget::default()),
-                            "Checkbox" => Box::new(CheckboxWidget::default()),
-                            "Slider" => Box::new(SliderWidget::default()),
-                            "Progress Bar" => Box::new(ProgressBarWidget::default()),
-                            "ComboBox" => Box::new(ComboBoxWidget::default()),
-                            "Image" => Box::new(ImageWidget::default()),
-                            "Vertical Layout" => Box::new(VerticalLayout::default()),
-                            "Horizontal Layout" => Box::new(HorizontalLayout::default()),
-                            "Grid Layout" => Box::new(GridLayout::default()),
-                            "Separator" => Box::new(SeparatorWidget::default()),
-                            "Spinner" => Box::new(SpinnerWidget::default()),
-                            "Hyperlink" => Box::new(HyperlinkWidget::default()),
-                            "Color Picker" => Box::new(ColorPickerWidget::default()),
-                            "Scroll Area" => Box::new(ScrollAreaWidget::default()),
-                            "Tab Container" => Box::new(TabContainerWidget::default()),
-                            "Window" => Box::new(WindowWidget::default()),
-                            _ => return,
-                        };
-                        self.children.push(new_widget);
+                // Render ghost preview if dragging
+                if let Some(dragged_type) = ui.memory(|mem| mem.data.get_temp::<String>(egui::Id::new("dragged_widget_type"))) {
+                    if ui.rect_contains_pointer(ui.min_rect()) {
+                        // For grid, just append at the bottom for now
+                        ui.horizontal(|ui| {
+                            ui.disable();
+                            ui.ctx().set_cursor_icon(egui::CursorIcon::Copy);
+                            render_widget_preview(ui, &dragged_type, egui::Color32::WHITE);
+                        });
                     }
                 }
-            })
-            .response;
+            }).response
+        });
 
         // Handle container selection only via border (not content area where children are)
-        let widget_rect = response.rect;
+        let widget_rect = response.response.rect;
         let border_clicked = create_container_selection_overlay(ui, widget_rect, 8.0, self.id);
         handle_selection(ui, self.id, border_clicked, selection);
 
         if selection.contains(&self.id) {
             draw_gizmo(ui, widget_rect);
+        }
+
+        if let Some(payload) = payload_option {
+            if ui.input(|i| i.pointer.any_released()) {
+                let new_widget: Box<dyn WidgetNode> = match payload.as_str() {
+                    "Button" => Box::new(ButtonWidget::default()),
+                    "Label" => Box::new(LabelWidget::default()),
+                    "Text Edit" => Box::new(TextEditWidget::default()),
+                    "Checkbox" => Box::new(CheckboxWidget::default()),
+                    "Slider" => Box::new(SliderWidget::default()),
+                    "Progress Bar" => Box::new(ProgressBarWidget::default()),
+                    "ComboBox" => Box::new(ComboBoxWidget::default()),
+                    "Image" => Box::new(ImageWidget::default()),
+                    "Vertical Layout" => Box::new(VerticalLayout::default()),
+                    "Horizontal Layout" => Box::new(HorizontalLayout::default()),
+                    "Grid Layout" => Box::new(GridLayout::default()),
+                    "Separator" => Box::new(SeparatorWidget::default()),
+                    "Spinner" => Box::new(SpinnerWidget::default()),
+                    "Hyperlink" => Box::new(HyperlinkWidget::default()),
+                    "Color Picker" => Box::new(ColorPickerWidget::default()),
+                    "Table" => Box::new(TableWidget::default()),
+                    "Plot" => Box::new(PlotWidget::default()),
+                    "Scroll Area" => Box::new(ScrollAreaWidget::default()),
+                    "Tab Container" => Box::new(TabContainerWidget::default()),
+                    "Window" => Box::new(WindowWidget::default()),
+                    "Freeform Layout" => Box::new(FreeformLayout::default()),
+                    _ => return,
+                };
+                self.children.push(new_widget);
+            }
         }
     }
 
@@ -753,10 +792,12 @@ impl WidgetNode for GridLayout {
         ui.horizontal(|ui| {
             ui.label("Columns:");
             ui.add(egui::DragValue::new(&mut self.columns).speed(1.0).range(1..=10));
+            reset_button(ui, &mut self.columns, 2);
         });
         ui.horizontal(|ui| {
             ui.label("Spacing:");
             ui.add(egui::DragValue::new(&mut self.spacing).speed(0.1));
+            reset_button(ui, &mut self.spacing, 5.0);
         });
         ui.label(format!("Children count: {}", self.children.len()));
     }
@@ -902,6 +943,7 @@ impl WidgetNode for ButtonWidget {
                 }
             } else {
                 ui.text_edit_singleline(&mut self.text);
+                reset_button(ui, &mut self.text, "Click Me".to_string());
             }
         });
 
@@ -986,7 +1028,118 @@ impl WidgetNode for ButtonWidget {
     }
 }
 
-// ===================== NEW WIDGETS =====================
+// ===================== HELPERS =====================
+
+/// Helper to render a small reset button if the value differs from default
+pub fn reset_button<T: PartialEq + Clone>(ui: &mut Ui, value: &mut T, default: T) {
+    if *value != default {
+        if ui.small_button("↺").on_hover_text("Reset to default").clicked() {
+            *value = default;
+        }
+    }
+}
+
+/// Render a preview of a widget for drag-and-drop visualization
+pub fn render_widget_preview(ui: &mut Ui, widget_type: &str, accent_color: egui::Color32) {
+    use crate::theme;
+    ui.set_max_width(150.0);
+
+    match widget_type {
+        "Button" => {
+            ui.button("Click Me");
+        }
+        "Label" => {
+            ui.label("Label Text");
+        }
+        "Text Edit" => {
+            let mut preview_text = "Enter text...".to_string();
+            ui.add(egui::TextEdit::singleline(&mut preview_text).desired_width(120.0));
+        }
+        "Checkbox" => {
+            let mut checked = true;
+            ui.checkbox(&mut checked, "Checkbox");
+        }
+        "Slider" => {
+            let mut value = 0.5f32;
+            ui.add(egui::Slider::new(&mut value, 0.0..=1.0).show_value(false));
+        }
+        "Progress Bar" => {
+            ui.add(egui::ProgressBar::new(0.6).desired_width(120.0));
+        }
+        "ComboBox" => {
+            let selected = "Option 1".to_string();
+            egui::ComboBox::from_id_salt("preview_combo")
+                .selected_text(&selected)
+                .width(100.0)
+                .show_ui(ui, |_ui| {});
+        }
+        "Image" => {
+            egui::Frame::new()
+                .fill(egui::Color32::from_gray(100))
+                .inner_margin(egui::Margin::same(16))
+                .show(ui, |ui| {
+                    ui.label(egui::RichText::new("🖼").size(24.0));
+                });
+        }
+        "Vertical Layout" | "Horizontal Layout" | "Grid Layout" => {
+            egui::Frame::new()
+                .stroke(egui::Stroke::new(1.0, accent_color))
+                .inner_margin(egui::Margin::same(8))
+                .show(ui, |ui| {
+                    ui.label(egui::RichText::new(theme::WidgetLabels::get(widget_type)).small());
+                });
+        }
+        "Separator" => {
+            ui.separator();
+        }
+        "Spinner" => {
+            ui.add(egui::Spinner::new());
+        }
+        "Hyperlink" => {
+            ui.hyperlink_to("Link", "");
+        }
+        "Color Picker" => {
+            let mut color = [0.3f32, 0.6, 0.9];
+            ui.color_edit_button_rgb(&mut color);
+        }
+        "Freeform Layout" => {
+            egui::Frame::new()
+                .fill(egui::Color32::from_gray(40))
+                .stroke(egui::Stroke::new(1.0, accent_color))
+                .inner_margin(egui::Margin::same(8))
+                .show(ui, |ui| {
+                    // Draw a small grid preview
+                    let (_id, rect) = ui.allocate_space(egui::vec2(60.0, 40.0));
+                    let painter = ui.painter();
+                    for i in 0..4 {
+                        let x = rect.left() + (i as f32) * 15.0;
+                        painter.line_segment(
+                            [egui::pos2(x, rect.top()), egui::pos2(x, rect.bottom())],
+                            egui::Stroke::new(1.0, egui::Color32::from_rgba_unmultiplied(255, 255, 255, 40)),
+                        );
+                    }
+                    for i in 0..3 {
+                        let y = rect.top() + (i as f32) * 15.0;
+                        painter.line_segment(
+                            [egui::pos2(rect.left(), y), egui::pos2(rect.right(), y)],
+                            egui::Stroke::new(1.0, egui::Color32::from_rgba_unmultiplied(255, 255, 255, 40)),
+                        );
+                    }
+                });
+        }
+        "Scroll Area" | "Tab Container" | "Window" | "Table" | "Plot" => {
+            egui::Frame::new()
+                .stroke(egui::Stroke::new(1.0, accent_color))
+                .inner_margin(egui::Margin::same(8))
+                .show(ui, |ui| {
+                    ui.label(egui::RichText::new(theme::WidgetLabels::get(widget_type)).small());
+                });
+        }
+        _ => {
+            ui.label(widget_type);
+        }
+    }
+}
 
 // --- Label ---
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -1068,6 +1221,7 @@ impl WidgetNode for LabelWidget {
                 }
             } else {
                 ui.text_edit_singleline(&mut self.text);
+                reset_button(ui, &mut self.text, "Label".to_string());
             }
         });
     }
@@ -1258,6 +1412,20 @@ impl WidgetNode for TextEditWidget {
             quote! { ui.label("Unbound TextEdit"); }
         }
     }
+
+    fn validate(&self, variables: &std::collections::HashMap<String, crate::model::Variable>) -> Vec<String> {
+        let mut errors = Vec::new();
+        if let Some(var_name) = self.bindings.get("value") {
+            if let Some(var) = variables.get(var_name) {
+                if var.v_type != crate::model::VariableType::String {
+                    errors.push(format!("TextEdit '{}' bound to non-string variable '{}' ({})", self.id, var_name, var.v_type));
+                }
+            } else {
+                errors.push(format!("TextEdit '{}' bound to missing variable '{}'", self.id, var_name));
+            }
+        }
+        errors
+    }
 }
 
 // --- Checkbox ---
@@ -1402,6 +1570,20 @@ impl WidgetNode for CheckboxWidget {
             }
         }
     }
+
+    fn validate(&self, variables: &std::collections::HashMap<String, crate::model::Variable>) -> Vec<String> {
+        let mut errors = Vec::new();
+        if let Some(var_name) = self.bindings.get("checked") {
+            if let Some(var) = variables.get(var_name) {
+                if var.v_type != crate::model::VariableType::Boolean {
+                    errors.push(format!("Checkbox '{}' bound to non-boolean variable '{}' ({})", self.id, var_name, var.v_type));
+                }
+            } else {
+                errors.push(format!("Checkbox '{}' bound to missing variable '{}'", self.id, var_name));
+            }
+        }
+        errors
+    }
 }
 
 // --- Slider ---
@@ -1470,8 +1652,10 @@ impl WidgetNode for SliderWidget {
         ui.horizontal(|ui| {
             ui.label("Min:");
             ui.add(egui::DragValue::new(&mut self.min));
+            reset_button(ui, &mut self.min, 0.0);
             ui.label("Max:");
             ui.add(egui::DragValue::new(&mut self.max));
+            reset_button(ui, &mut self.max, 100.0);
         });
         ui.horizontal(|ui| {
             ui.label("Bind Value (Num):");
@@ -1559,6 +1743,21 @@ impl WidgetNode for SliderWidget {
             }
         }
     }
+
+    fn validate(&self, variables: &std::collections::HashMap<String, crate::model::Variable>) -> Vec<String> {
+        let mut errors = Vec::new();
+        if let Some(var_name) = self.bindings.get("value") {
+            if let Some(var) = variables.get(var_name) {
+                match var.v_type {
+                    crate::model::VariableType::Integer | crate::model::VariableType::Float => {},
+                    _ => errors.push(format!("Slider '{}' bound to non-numeric variable '{}' ({})", self.id, var_name, var.v_type)),
+                }
+            } else {
+                errors.push(format!("Slider '{}' bound to missing variable '{}'", self.id, var_name));
+            }
+        }
+        errors
+    }
 }
 
 // --- ProgressBar ---
@@ -1614,6 +1813,7 @@ impl WidgetNode for ProgressBarWidget {
         ui.horizontal(|ui| {
             ui.label("Progress (0.0 - 1.0):");
             ui.add(egui::Slider::new(&mut self.value, 0.0..=1.0));
+            reset_button(ui, &mut self.value, 0.5);
         });
         ui.horizontal(|ui| {
             ui.label("Bind Value:");
@@ -1647,11 +1847,26 @@ impl WidgetNode for ProgressBarWidget {
     fn codegen(&self) -> proc_macro2::TokenStream {
         if let Some(var) = self.bindings.get("value") {
             let ident = quote::format_ident!("{}", var);
-            quote! { ui.add(egui::ProgressBar::new(self.#ident).show_percentage()); }
+            quote! { ui.add(egui::ProgressBar::new(self.#ident as f32).show_percentage()); }
         } else {
             let val = self.value;
             quote! { ui.add(egui::ProgressBar::new(#val).show_percentage()); }
         }
+    }
+
+    fn validate(&self, variables: &std::collections::HashMap<String, crate::model::Variable>) -> Vec<String> {
+        let mut errors = Vec::new();
+        if let Some(var_name) = self.bindings.get("value") {
+            if let Some(var) = variables.get(var_name) {
+                match var.v_type {
+                    crate::model::VariableType::Integer | crate::model::VariableType::Float => {},
+                    _ => errors.push(format!("ProgressBar '{}' bound to non-numeric variable '{}' ({})", self.id, var_name, var.v_type)),
+                }
+            } else {
+                errors.push(format!("ProgressBar '{}' bound to missing variable '{}'", self.id, var_name));
+            }
+        }
+        errors
     }
 }
 
@@ -2424,6 +2639,8 @@ impl WidgetNode for WindowWidget {
                         "Spinner" => Box::new(SpinnerWidget::default()),
                         "Hyperlink" => Box::new(HyperlinkWidget::default()),
                         "Color Picker" => Box::new(ColorPickerWidget::default()),
+                    "Table" => Box::new(TableWidget::default()),
+                    "Plot" => Box::new(PlotWidget::default()),
                         "Scroll Area" => Box::new(ScrollAreaWidget::default()),
                         "Tab Container" => Box::new(TabContainerWidget::default()),
                         "Window" => Box::new(WindowWidget::default()),
@@ -2636,6 +2853,8 @@ impl WidgetNode for TabContainerWidget {
                             "Spinner" => Box::new(SpinnerWidget::default()),
                             "Hyperlink" => Box::new(HyperlinkWidget::default()),
                             "Color Picker" => Box::new(ColorPickerWidget::default()),
+                    "Table" => Box::new(TableWidget::default()),
+                    "Plot" => Box::new(PlotWidget::default()),
                             "Scroll Area" => Box::new(ScrollAreaWidget::default()),
                             "Tab Container" => Box::new(TabContainerWidget::default()),
                             "Window" => Box::new(WindowWidget::default()),
@@ -2832,6 +3051,8 @@ impl WidgetNode for ScrollAreaWidget {
                             "Spinner" => Box::new(SpinnerWidget::default()),
                             "Hyperlink" => Box::new(HyperlinkWidget::default()),
                             "Color Picker" => Box::new(ColorPickerWidget::default()),
+                    "Table" => Box::new(TableWidget::default()),
+                    "Plot" => Box::new(PlotWidget::default()),
                             "Scroll Area" => Box::new(ScrollAreaWidget::default()),
                             "Tab Container" => Box::new(TabContainerWidget::default()),
                             "Window" => Box::new(WindowWidget::default()),
@@ -3301,6 +3522,8 @@ impl WidgetNode for FreeformLayout {
                     "Spinner" => Some(Box::new(SpinnerWidget::default())),
                     "Hyperlink" => Some(Box::new(HyperlinkWidget::default())),
                     "Color Picker" => Some(Box::new(ColorPickerWidget::default())),
+                    "Table" => Some(Box::new(TableWidget::default())),
+                    "Plot" => Some(Box::new(PlotWidget::default())),
                     _ => None,
                 };
 
@@ -3362,7 +3585,7 @@ impl WidgetNode for FreeformLayout {
         // Show child positions
         if !self.children.is_empty() {
             ui.collapsing("Child Positions", |ui| {
-                for (idx, child) in self.children.iter_mut().enumerate() {
+                for (_idx, child) in self.children.iter_mut().enumerate() {
                     ui.horizontal(|ui| {
                         ui.label(format!("{}:", child.widget.name()));
                         ui.label("x:");
@@ -3408,5 +3631,437 @@ impl WidgetNode for FreeformLayout {
 
     fn children_mut(&mut self) -> Option<&mut Vec<Box<dyn WidgetNode>>> {
         None
+    }
+}
+
+// --- Table ---
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct TableColumn {
+    pub header: String,
+    pub width: Option<f32>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct TableWidget {
+    pub id: Uuid,
+    pub columns: Vec<TableColumn>,
+    pub row_count: usize,
+    pub striped: bool,
+    pub resizable: bool,
+}
+
+impl Default for TableWidget {
+    fn default() -> Self {
+        Self {
+            id: Uuid::new_v4(),
+            columns: vec![
+                TableColumn { header: "ID".to_string(), width: Some(60.0) },
+                TableColumn { header: "Name".to_string(), width: None },
+                TableColumn { header: "Role".to_string(), width: None },
+            ],
+            row_count: 5,
+            striped: true,
+            resizable: true,
+        }
+    }
+}
+
+#[typetag::serde]
+impl WidgetNode for TableWidget {
+    fn clone_box(&self) -> Box<dyn WidgetNode> {
+        Box::new(self.clone())
+    }
+
+    fn id(&self) -> Uuid {
+        self.id
+    }
+
+    fn name(&self) -> &str {
+        "Table"
+    }
+
+    fn render_editor(&mut self, ui: &mut Ui, selection: &mut HashSet<Uuid>) {
+        // Wrap table in a Frame so we have a bounding box for selection
+        let frame = egui::Frame::none().inner_margin(0.0);
+        let response = frame.show(ui, |ui| {
+             let available_height = 150.0; // Fixed height for editor preview
+             let mut table = egui_extras::TableBuilder::new(ui)
+                .striped(self.striped)
+                .resizable(self.resizable)
+                .cell_layout(egui::Layout::left_to_right(egui::Align::Center))
+                .min_scrolled_height(0.0)
+                .max_scroll_height(available_height);
+
+            for col in &self.columns {
+                if let Some(w) = col.width {
+                    table = table.column(egui_extras::Column::exact(w));
+                } else {
+                    table = table.column(egui_extras::Column::initial(100.0).at_least(40.0));
+                }
+            }
+            
+            table.header(20.0, |mut header| {
+                for col in &self.columns {
+                    header.col(|ui| {
+                        ui.strong(&col.header);
+                    });
+                }
+             })
+             .body(|mut body| {
+                 for row_idx in 0..self.row_count {
+                     body.row(18.0, |mut row| {
+                        for col_idx in 0..self.columns.len() {
+                            row.col(|ui| {
+                                ui.label(format!("Cell {},{}", row_idx, col_idx));
+                            });
+                        }
+                     });
+                 }
+             });
+        });
+
+        let widget_rect = response.response.rect;
+        let overlay = create_selection_overlay(ui, widget_rect, self.id);
+        handle_selection(ui, self.id, overlay.clicked(), selection);
+        
+        if selection.contains(&self.id) {
+            draw_gizmo(ui, widget_rect);
+        }
+        
+        overlay.on_hover_text(format!("Table\nID: {}", self.id));
+    }
+
+    fn inspect(&mut self, ui: &mut Ui, _known_variables: &[String], _known_assets: &[(String, String)]) {
+        ui.heading("Table Properties");
+        ui.label(format!("ID: {}", self.id));
+        ui.separator();
+        
+        ui.checkbox(&mut self.striped, "Striped Rows");
+        ui.checkbox(&mut self.resizable, "Resizable Columns");
+        ui.horizontal(|ui| {
+            ui.label("Preview Rows:");
+             ui.add(egui::DragValue::new(&mut self.row_count).range(0..=100));
+        });
+        
+        ui.separator();
+        ui.label("Columns:");
+        
+        let mut remove_idx = None;
+        for (idx, col) in self.columns.iter_mut().enumerate() {
+            ui.horizontal(|ui| {
+                ui.label(format!("#{}", idx+1));
+                ui.text_edit_singleline(&mut col.header);
+                if ui.button("🗑").clicked() {
+                    remove_idx = Some(idx);
+                }
+            });
+            ui.horizontal(|ui| {
+                 ui.label("Width:");
+                 let mut fixed = col.width.is_some();
+                 if ui.checkbox(&mut fixed, "Fixed").changed() {
+                     col.width = if fixed { Some(100.0) } else { None };
+                 }
+                 if let Some(w) = &mut col.width {
+                      ui.add(egui::DragValue::new(w).speed(1.0).range(10.0..=1000.0));
+                 }
+            });
+            ui.separator();
+        }
+        
+        if let Some(idx) = remove_idx {
+            self.columns.remove(idx);
+        }
+        
+        if ui.button("+ Add Column").clicked() {
+            self.columns.push(TableColumn { header: "New Col".to_string(), width: None });
+        }
+    }
+
+    fn codegen(&self) -> proc_macro2::TokenStream {
+        let striped = self.striped;
+        let resizable = self.resizable;
+        let col_defs: Vec<_> = self.columns.iter().map(|col| {
+            if let Some(w) = col.width {
+                quote! { .column(egui_extras::Column::exact(#w)) }
+            } else {
+                quote! { .column(egui_extras::Column::initial(100.0).at_least(40.0)) }
+            }
+        }).collect();
+        
+        let headers: Vec<_> = self.columns.iter().map(|col| {
+            let h = &col.header;
+            quote! {
+                header.col(|ui| { ui.strong(#h); });
+            }
+        }).collect();
+        
+        let col_count = self.columns.len();
+        
+        quote! {
+            egui_extras::TableBuilder::new(ui)
+                .striped(#striped)
+                .resizable(#resizable)
+                .cell_layout(egui::Layout::left_to_right(egui::Align::Center))
+                .min_scrolled_height(0.0)
+                #(#col_defs)*
+                .header(20.0, |mut header| {
+                    #(#headers)*
+                })
+                .body(|mut body| {
+                    for i in 0..5 {
+                        body.row(18.0, |mut row| {
+                            for j in 0..#col_count {
+                                row.col(|ui| {
+                                    ui.label(format!("Cell {},{}", i, j));
+                                });
+                            }
+                        });
+                    }
+                });
+        }
+    }
+}
+
+// --- Plot ---
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+pub enum PlotType {
+    Line,
+    Bar,
+    Points,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct PlotSeries {
+    pub name: String,
+    pub plot_type: PlotType,
+    pub color: Option<[f32; 3]>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct PlotWidget {
+    pub id: Uuid,
+    pub title: String,
+    pub show_x_axis: bool,
+    pub show_y_axis: bool,
+    pub show_legend: bool,
+    pub series: Vec<PlotSeries>,
+    pub height: f32,
+}
+
+impl Default for PlotWidget {
+    fn default() -> Self {
+        Self {
+            id: Uuid::new_v4(),
+            title: "Performance".to_string(),
+            show_x_axis: true,
+            show_y_axis: true,
+            show_legend: true,
+            series: vec![
+                PlotSeries { name: "Series A".to_string(), plot_type: PlotType::Line, color: Some([0.0, 0.5, 1.0]) },
+            ],
+            height: 200.0,
+        }
+    }
+}
+
+#[typetag::serde]
+impl WidgetNode for PlotWidget {
+    fn clone_box(&self) -> Box<dyn WidgetNode> {
+        Box::new(self.clone())
+    }
+
+    fn id(&self) -> Uuid {
+        self.id
+    }
+
+    fn name(&self) -> &str {
+        "Plot"
+    }
+
+    fn render_editor(&mut self, ui: &mut Ui, selection: &mut HashSet<Uuid>) {
+        use egui_plot::{Line, Plot, PlotPoints};
+
+        let mut plot = Plot::new(format!("plot_{}", self.id))
+            .height(self.height)
+            .show_x(self.show_x_axis)
+            .show_y(self.show_y_axis);
+        
+        if self.show_legend {
+            plot = plot.legend(egui_plot::Legend::default());
+        }
+
+        let response = plot.show(ui, |plot_ui| {
+            for (idx, s) in self.series.iter().enumerate() {
+                let color = s.color.map(|c| egui::Color32::from_rgb(
+                    (c[0] * 255.0) as u8,
+                    (c[1] * 255.0) as u8,
+                    (c[2] * 255.0) as u8
+                )).unwrap_or(egui::Color32::from_gray(150));
+
+                match s.plot_type {
+                    PlotType::Line => {
+                        let sin: PlotPoints = (0..1000).map(|i| {
+                            let x = i as f64 * 0.01;
+                            [x, (x + (idx as f64)).sin()]
+                        }).collect();
+                        plot_ui.line(Line::new(&s.name, sin).color(color));
+                    }
+                    PlotType::Bar => {
+                        let bars: Vec<egui_plot::Bar> = (0..10).map(|i| {
+                            egui_plot::Bar::new(i as f64, (i as f64 + (idx as f64)).cos().abs() * 5.0)
+                        }).collect();
+                        plot_ui.bar_chart(egui_plot::BarChart::new(&s.name, bars).color(color));
+                    }
+                    PlotType::Points => {
+                        let points: PlotPoints = (0..50).map(|i| {
+                            let x = i as f64 * 0.2;
+                            [x, (x * (idx as f64 + 1.0)).cos() * 2.0]
+                        }).collect();
+                        plot_ui.points(egui_plot::Points::new(&s.name, points).color(color));
+                    }
+                }
+            }
+        });
+
+        let widget_rect = response.response.rect;
+        let overlay = create_selection_overlay(ui, widget_rect, self.id);
+        handle_selection(ui, self.id, overlay.clicked(), selection);
+        
+        if selection.contains(&self.id) {
+            draw_gizmo(ui, widget_rect);
+        }
+        
+        overlay.on_hover_text(format!("Plot: {}\nID: {}", self.title, self.id));
+    }
+
+    fn inspect(&mut self, ui: &mut Ui, _known_variables: &[String], _known_assets: &[(String, String)]) {
+        ui.heading("Plot Properties");
+        ui.label(format!("ID: {}", self.id));
+        ui.separator();
+        
+        ui.horizontal(|ui| {
+            ui.label("Title:");
+            ui.text_edit_singleline(&mut self.title);
+        });
+
+        ui.horizontal(|ui| {
+            ui.label("Height:");
+            ui.add(egui::DragValue::new(&mut self.height).speed(1.0).range(50.0..=1000.0));
+        });
+
+        ui.checkbox(&mut self.show_x_axis, "Show X Axis");
+        ui.checkbox(&mut self.show_y_axis, "Show Y Axis");
+        ui.checkbox(&mut self.show_legend, "Show Legend");
+
+        ui.separator();
+        ui.label("Series:");
+        
+        let mut remove_idx = None;
+        for (idx, s) in self.series.iter_mut().enumerate() {
+            ui.collapsing(format!("Series #{} ({})", idx + 1, s.name), |ui| {
+                ui.horizontal(|ui| {
+                    ui.label("Name:");
+                    ui.text_edit_singleline(&mut s.name);
+                });
+
+                ui.horizontal(|ui| {
+                    ui.label("Type:");
+                    egui::ComboBox::from_id_salt(format!("plot_type_{}_{}", self.id, idx))
+                        .selected_text(format!("{:?}", s.plot_type))
+                        .show_ui(ui, |ui| {
+                            ui.selectable_value(&mut s.plot_type, PlotType::Line, "Line");
+                            ui.selectable_value(&mut s.plot_type, PlotType::Bar, "Bar");
+                            ui.selectable_value(&mut s.plot_type, PlotType::Points, "Points");
+                        });
+                });
+
+                ui.horizontal(|ui| {
+                    ui.label("Color:");
+                    let mut color = s.color.unwrap_or([1.0, 1.0, 1.0]);
+                    if ui.color_edit_button_rgb(&mut color).changed() {
+                        s.color = Some(color);
+                    }
+                });
+
+                if ui.button("🗑 Remove Series").clicked() {
+                    remove_idx = Some(idx);
+                }
+            });
+        }
+
+        if let Some(idx) = remove_idx {
+            self.series.remove(idx);
+        }
+
+        if ui.button("+ Add Series").clicked() {
+            self.series.push(PlotSeries {
+                name: format!("Series {}", self.series.len() + 1),
+                plot_type: PlotType::Line,
+                color: Some([1.0, 1.0, 1.0]),
+            });
+        }
+    }
+
+    fn codegen(&self) -> proc_macro2::TokenStream {
+        let title = &self.title;
+        let height = self.height;
+        let show_x = self.show_x_axis;
+        let show_y = self.show_y_axis;
+        let show_legend = self.show_legend;
+
+        let mut series_code = Vec::new();
+        for (idx, s) in self.series.iter().enumerate() {
+            let name = &s.name;
+            let color = s.color.unwrap_or([1.0, 1.0, 1.0]);
+            let r = color[0];
+            let g = color[1];
+            let b = color[2];
+
+            match s.plot_type {
+                PlotType::Line => {
+                    series_code.push(quote! {
+                        let sin: egui_plot::PlotPoints = (0..1000).map(|i| {
+                            let x = i as f64 * 0.01;
+                            [x, (x + (#idx as f64)).sin()]
+                        }).collect();
+                        plot_ui.line(egui_plot::Line::new(#name, sin).color(egui::Color32::from_rgb_f32(#r, #g, #b)));
+                    });
+                }
+                PlotType::Bar => {
+                    series_code.push(quote! {
+                        let bars: Vec<egui_plot::Bar> = (0..10).map(|i| {
+                            egui_plot::Bar::new(i as f64, (i as f64 + (#idx as f64)).cos().abs() * 5.0)
+                        }).collect();
+                        plot_ui.bar_chart(egui_plot::BarChart::new(#name, bars).color(egui::Color32::from_rgb_f32(#r, #g, #b)));
+                    });
+                }
+                PlotType::Points => {
+                    series_code.push(quote! {
+                        let points: egui_plot::PlotPoints = (0..50).map(|i| {
+                            let x = i as f64 * 0.2;
+                            [x, (x * (#idx as f64 + 1.0)).cos() * 2.0]
+                        }).collect();
+                        plot_ui.points(egui_plot::Points::new(#name, points).color(egui::Color32::from_rgb_f32(#r, #g, #b)));
+                    });
+                }
+            }
+        }
+
+        let mut plot_init = quote! {
+            egui_plot::Plot::new(#title)
+                .height(#height)
+                .show_x(#show_x)
+                .show_y(#show_y)
+        };
+
+        if show_legend {
+            plot_init = quote! { #plot_init.legend(egui_plot::Legend::default()) };
+        }
+
+        quote! {
+            #plot_init.show(ui, |plot_ui| {
+                #(#series_code)*
+            });
+        }
     }
 }

@@ -34,6 +34,15 @@ pub struct CodeValidator;
 impl CodeValidator {
     /// Validate that generated code compiles by running cargo check
     pub fn validate(project_state: &ProjectState) -> Result<String, String> {
+        // 1. Perform logical validation on the widget tree
+        let mut logical_errors = Vec::new();
+        validate_node_recursive(project_state.root_node.as_ref(), &project_state.variables, &mut logical_errors);
+
+        if !logical_errors.is_empty() {
+            return Err(format!("Logical Validation Failed:\n- {}", logical_errors.join("\n- ")));
+        }
+
+        // 2. Run Cargo Check (slow but thorough)
         // Create a temporary directory
         let temp_dir = std::env::temp_dir().join(format!("aether_check_{}", uuid::Uuid::new_v4()));
 
@@ -77,6 +86,22 @@ impl CodeValidator {
             let stderr = String::from_utf8_lossy(&output.stderr);
             let stdout = String::from_utf8_lossy(&output.stdout);
             Err(format!("{}\n{}", stdout, stderr))
+        }
+    }
+}
+
+fn validate_node_recursive(
+    node: &dyn crate::model::WidgetNode,
+    variables: &std::collections::HashMap<String, crate::model::Variable>,
+    errors: &mut Vec<String>,
+) {
+    // Validate current node
+    errors.extend(node.validate(variables));
+
+    // Recurse into children
+    if let Some(children) = node.children() {
+        for child in children {
+            validate_node_recursive(child.as_ref(), variables, errors);
         }
     }
 }

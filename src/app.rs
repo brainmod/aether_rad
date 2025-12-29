@@ -1,14 +1,17 @@
+use crate::compiler::Compiler;
 use crate::model::ProjectState;
 use crate::theme::{self, ThemeMode};
-use crate::ui::{default_layout, AetherTab, AetherTabViewer};
-use crate::validator::ValidationStatus;
+use crate::ui::{
+    assets, canvas, code_preview, hierarchy, inspector, palette, variables, EditorContext,
+};
+use crate::validator::{CodeValidator, ValidationStatus};
 use crate::widgets::{ButtonWidget, LabelWidget, VerticalLayout};
 use eframe::App;
-use egui_dock::{DockArea, DockState};
+use egui::RichText;
 
 pub struct AetherApp {
-    // The visual state of the docking area (layout, tabs, sizes)
-    dock_state: DockState<AetherTab>,
+    // UI State for panels
+    ui_state: UiState,
 
     // The data state of the user's project (SOM)
     project_state: ProjectState,
@@ -36,6 +39,46 @@ pub struct AetherApp {
     canvas_pan: egui::Vec2,
 }
 
+// UI State implementation
+pub struct UiState {
+    pub left_panel_expanded: bool,
+    pub right_panel_expanded: bool,
+    pub bottom_panel_expanded: bool, // Renamed to mean status bar visibility
+    
+    // Tab selection
+    pub left_tab: LeftTab,
+    pub right_bottom_tab: RightBottomTab, // New split for Inspector/Variables
+
+    pub show_code_preview: bool,
+    pub show_project_settings: bool,
+}
+
+impl Default for UiState {
+    fn default() -> Self {
+        Self {
+            left_panel_expanded: true,
+            right_panel_expanded: true,
+            bottom_panel_expanded: true, // Shows status bar by default
+            left_tab: LeftTab::Palette,
+            right_bottom_tab: RightBottomTab::Inspector,
+            show_code_preview: false,
+            show_project_settings: false,
+        }
+    }
+}
+
+#[derive(PartialEq, Clone, Copy)]
+pub enum LeftTab {
+    Palette,
+    Assets,
+}
+
+#[derive(PartialEq, Clone, Copy)]
+pub enum RightBottomTab {
+    Inspector,
+    Variables,
+}
+
 impl AetherApp {
     pub fn new(_cc: &eframe::CreationContext<'_>) -> Self {
         // Initialize with a demo project
@@ -54,7 +97,7 @@ impl AetherApp {
         }));
 
         Self {
-            dock_state: default_layout(),
+            ui_state: UiState::default(),
             project_state: ProjectState::new(Box::new(root)),
             undo_stack: Vec::new(),
             redo_stack: Vec::new(),
@@ -208,9 +251,31 @@ impl App for AetherApp {
             }
         });
 
+        // --- TOP PANEL (Menu Bar) ---
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
             egui::MenuBar::new().ui(ui, |ui| {
                 ui.menu_button("File", |ui| {
+                    ui.menu_button("New Project...", |ui| {
+                        if ui.button("Empty Project").clicked() {
+                            self.project_state = crate::model::ProjectState::empty();
+                            ui.close();
+                        }
+                        if ui.button("Counter App").clicked() {
+                            self.project_state = crate::model::ProjectState::template_counter_app();
+                            ui.close();
+                        }
+                        if ui.button("Contact Form").clicked() {
+                            self.project_state = crate::model::ProjectState::template_form();
+                            ui.close();
+                        }
+                        if ui.button("Dashboard").clicked() {
+                            self.project_state = crate::model::ProjectState::template_dashboard();
+                            ui.close();
+                        }
+                    });
+                    
+                    ui.separator();
+
                     if ui.button("Save Project").clicked() {
                         self.push_undo();
                         if let Some(path) = crate::io::save_file("project.json") {
@@ -234,6 +299,51 @@ impl App for AetherApp {
                         }
                         ui.close();
                     }
+
+                    ui.separator();
+
+                    if ui.button("Project Settings...").clicked() {
+                        self.ui_state.show_project_settings = true;
+                        ui.close();
+                    }
+
+                    ui.menu_button("Export...", |ui| {
+                        if ui.button("Export to Folder").clicked() {
+                            if let Some(folder) = crate::io::pick_folder() {
+                                // Re-using export logic
+                                let src_dir = folder.join("src");
+                                let _ = std::fs::create_dir_all(&src_dir);
+                                
+                                let cargo_toml_path = folder.join("Cargo.toml");
+                                let cargo_toml = Compiler::generate_cargo_toml(&self.project_state.project_name);
+                                let _ = std::fs::write(&cargo_toml_path, cargo_toml);
+
+                                let main_rs_path = src_dir.join("main.rs");
+                                let main_rs = Compiler::generate_main_rs();
+                                let _ = std::fs::write(&main_rs_path, main_rs);
+
+                                let app_rs_path = src_dir.join("app.rs");
+                                let app_rs = Compiler::generate_app_rs(&self.project_state);
+                                let _ = std::fs::write(&app_rs_path, app_rs);
+                                
+                                // Copy assets...
+                                if !self.project_state.assets.assets.is_empty() {
+                                    let assets_dir = folder.join("assets");
+                                    let _ = std::fs::create_dir_all(&assets_dir);
+                                    for asset in self.project_state.assets.assets.values() {
+                                        if let Some(name) = asset.path.file_name() {
+                                            let _ = std::fs::copy(&asset.path, assets_dir.join(name));
+                                        }
+                                    }
+                                }
+                            }
+                            ui.close();
+                        }
+                        if ui.button("Print App Code").clicked() {
+                            println!("{}", Compiler::generate_app_rs(&self.project_state));
+                            ui.close();
+                        }
+                    });
                 });
 
                 ui.menu_button("Edit", |ui| {
@@ -270,21 +380,178 @@ impl App for AetherApp {
                         ui.close();
                     }
                 });
+                
+                ui.menu_button("View", |ui| {
+                    if ui.checkbox(&mut self.ui_state.left_panel_expanded, "Left Panel").clicked() {
+                        ui.close();
+                    }
+                    if ui.checkbox(&mut self.ui_state.right_panel_expanded, "Right Panel").clicked() {
+                        ui.close();
+                    }
+                    if ui.checkbox(&mut self.ui_state.bottom_panel_expanded, "Status Bar").clicked() {
+                        ui.close();
+                    }
+                    ui.separator();
+                    if ui.checkbox(&mut self.ui_state.show_code_preview, "Code Preview Window").clicked() {
+                         ui.close();
+                    }
+                    ui.separator();
+                    // Theme toggle inside View menu
+                    let theme_name = match self.theme_mode {
+                        ThemeMode::Dark => "Switch to Light Mode",
+                        ThemeMode::Light => "Switch to Dark Mode",
+                    };
+                    if ui.button(theme_name).clicked() {
+                        self.theme_mode.toggle();
+                        ui.close();
+                    }
+                });
+
+                ui.menu_button("Tools", |ui| {
+                    if ui.button("Validate Code").clicked() {
+                        let project_state_clone = self.project_state.clone();
+                        match CodeValidator::validate(&project_state_clone) {
+                            Ok(_) => {
+                                self.validation_status = ValidationStatus::Success;
+                            }
+                            Err(err) => {
+                                self.validation_status = ValidationStatus::Failed(err);
+                            }
+                        }
+                        ui.close();
+                    }
+                });
             });
         });
 
-        // Create the viewer, passing mutable access to the project data
-        let mut viewer = AetherTabViewer {
+        // Create the editor context AFTER top panel (avoids borrow conflict with push_undo)
+        let mut editor_ctx = EditorContext {
             project_state: &mut self.project_state,
             validation_status: &mut self.validation_status,
             theme_mode: &mut self.theme_mode,
             canvas_zoom: &mut self.canvas_zoom,
             canvas_pan: &mut self.canvas_pan,
+            clipboard: &mut self.clipboard,
         };
 
-        // Render the docking area
-        DockArea::new(&mut self.dock_state)
-            .style(egui_dock::Style::from_egui(ctx.style().as_ref()))
-            .show(ctx, &mut viewer);
+        // --- BOTTOM STATUS BAR ---
+        if self.ui_state.bottom_panel_expanded {
+            egui::TopBottomPanel::bottom("bottom_panel")
+                .resizable(false)
+                .min_height(24.0)
+                .show(ctx, |ui| {
+                    ui.horizontal(|ui| {
+                        let is_checking = editor_ctx.validation_status.is_checking();
+                        if is_checking {
+                            ui.add(egui::Spinner::new().size(12.0));
+                        }
+                        
+                        let status_text = editor_ctx.validation_status.display_text();
+                        let status_color = if editor_ctx.validation_status.is_success() {
+                            theme::success_color(ui.ctx())
+                        } else if matches!(editor_ctx.validation_status, ValidationStatus::Failed(_)) {
+                            theme::error_color(ui.ctx())
+                        } else {
+                            theme::muted_color(ui.ctx())
+                        };
+                        
+                        ui.label(RichText::new(status_text).size(11.0).color(status_color));
+                    });
+                });
+        }
+
+        // --- LEFT PANEL ---
+        if self.ui_state.left_panel_expanded {
+            egui::SidePanel::left("left_panel")
+                .resizable(true)
+                .default_width(250.0)
+                .show(ctx, |ui| {
+                    ui.horizontal(|ui| {
+                        if ui.selectable_label(self.ui_state.left_tab == LeftTab::Palette, "Palette").clicked() {
+                            self.ui_state.left_tab = LeftTab::Palette;
+                        }
+                         if ui.selectable_label(self.ui_state.left_tab == LeftTab::Assets, "Assets").clicked() {
+                            self.ui_state.left_tab = LeftTab::Assets;
+                        }
+                    });
+                    ui.separator();
+                    
+                    match self.ui_state.left_tab {
+                        LeftTab::Palette => palette::render_palette(ui, &mut editor_ctx),
+                        LeftTab::Assets => assets::render_assets(ui, &mut editor_ctx),
+                    }
+                });
+        }
+
+        // --- RIGHT PANEL ---
+        if self.ui_state.right_panel_expanded {
+            egui::SidePanel::right("right_panel")
+                .resizable(true)
+                .default_width(300.0)
+                .show(ctx, |ui| {
+                    // Split vertically: Hierarchy on top, [Inspector | Variables] on bottom
+                    let available_height = ui.available_height();
+                    let half_height = available_height / 2.0;
+                    
+                    egui::ScrollArea::vertical()
+                        .max_height(half_height)
+                        .id_salt("hierarchy_scroll")
+                        .show(ui, |ui| {
+                            hierarchy::render_hierarchy(ui, &mut editor_ctx);
+                        });
+                        
+                    ui.separator();
+                    
+                    // Tab switcher for bottom half
+                    ui.horizontal(|ui| {
+                        if ui.selectable_label(self.ui_state.right_bottom_tab == RightBottomTab::Inspector, "Inspector").clicked() {
+                            self.ui_state.right_bottom_tab = RightBottomTab::Inspector;
+                        }
+                        if ui.selectable_label(self.ui_state.right_bottom_tab == RightBottomTab::Variables, "Variables").clicked() {
+                            self.ui_state.right_bottom_tab = RightBottomTab::Variables;
+                        }
+                    });
+                    ui.separator();
+
+                    egui::ScrollArea::vertical()
+                        .id_salt("inspector_vars_scroll")
+                        .show(ui, |ui| {
+                            match self.ui_state.right_bottom_tab {
+                                RightBottomTab::Inspector => inspector::render_inspector(ui, &mut editor_ctx),
+                                RightBottomTab::Variables => variables::render_variables(ui, &mut editor_ctx),
+                            }
+                        });
+                });
+        }
+
+        // --- CENTRAL PANEL (Canvas) ---
+        egui::CentralPanel::default().show(ctx, |ui| {
+            canvas::render_canvas(ui, &mut editor_ctx);
+        });
+
+        // --- WINDOWS ---
+        if self.ui_state.show_code_preview {
+            egui::Window::new("Code Preview")
+                .open(&mut self.ui_state.show_code_preview)
+                .default_size([600.0, 500.0])
+                .show(ctx, |ui| {
+                    code_preview::render_code_preview(ui, &mut editor_ctx);
+                });
+        }
+
+        if self.ui_state.show_project_settings {
+            egui::Window::new("Project Settings")
+                .open(&mut self.ui_state.show_project_settings)
+                .default_size([300.0, 150.0])
+                .show(ctx, |ui| {
+                    ui.label("Project Configuration");
+                    ui.add_space(8.0);
+                    ui.horizontal(|ui| {
+                        ui.label("Project Name:");
+                        ui.text_edit_singleline(&mut editor_ctx.project_state.project_name);
+                    });
+                    // Future settings can go here
+                });
+        }
     }
 }

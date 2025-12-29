@@ -204,6 +204,13 @@ pub trait WidgetNode: std::fmt::Debug {
         quote::quote! { /* Default no-op */ }
     }
 
+    /// Distinct behavior 4: Logic Validation
+    /// Checks for logical errors (e.g., binding mismatches).
+    /// Returns a list of error messages.
+    fn validate(&self, _variables: &HashMap<String, Variable>) -> Vec<String> {
+        Vec::new()
+    }
+
     /// Unique identifier for the widget instance.
     fn id(&self) -> Uuid;
 
