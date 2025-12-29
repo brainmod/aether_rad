@@ -26,13 +26,14 @@ Aether RAD bridges the gap between **Immediate Mode** GUI rendering (egui) and *
 
 All five architectural phases from the development plan have been implemented, plus numerous extended features.
 
-### Widget Library (15 Widgets)
+### Widget Library (21 Widgets)
 
 | Category | Widgets |
 |----------|---------|
-| **Layouts** | VerticalLayout, HorizontalLayout, GridLayout |
+| **Layouts** | VerticalLayout, HorizontalLayout, GridLayout, FreeformLayout, ScrollArea, TabContainer, Window |
 | **Inputs** | Button, TextEdit, Checkbox, Slider, ComboBox |
 | **Display** | Label, ProgressBar, Image, Separator, Spinner, Hyperlink, ColorPicker |
+| **Data** | TableWidget, PlotWidget |
 
 ### Phase Completion
 
@@ -117,9 +118,9 @@ trunk build  # Production
 
 ## Documentation
 
-- **CLAUDE.md** - Development guide with bite-sized tasks for contributors
+- **CLAUDE.md** - Development guide, project status, and tasks for contributors
 - **WASM.md** - WASM build configuration and limitations
-- **Rust RAD Utility Development Plan.md** - Full architectural blueprint
+- **Rust RAD Utility Development Plan.md** - Original architectural blueprint
 
 ## License
 
