@@ -27,7 +27,7 @@ pub fn render_hierarchy(ui: &mut Ui, ctx: &mut EditorContext) {
 
     // Keyboard navigation hint
     ui.label(
-        RichText::new("↑ ↓ Navigate • Drag to reorder")
+        RichText::new("↑↓ Nav • Ctrl+↑↓ Reorder • Drag to move")
             .size(10.0)
             .color(theme::muted_color(ui.ctx())),
     );
@@ -38,13 +38,22 @@ pub fn render_hierarchy(ui: &mut Ui, ctx: &mut EditorContext) {
         let all_ids = ctx.project_state.get_all_widget_ids();
         let current_selected = ctx.project_state.selection.iter().next().cloned();
 
+        // Check for Ctrl key held (for reordering)
+        let ctrl_held = ui.input(|i| i.modifiers.ctrl);
+
         ui.input(|i| {
             if i.key_pressed(egui::Key::ArrowUp) {
                 if let Some(current) = current_selected {
-                    if let Some(current_idx) = all_ids.iter().position(|id| *id == current) {
-                        if current_idx > 0 {
-                            ctx.project_state.selection.clear();
-                            ctx.project_state.selection.insert(all_ids[current_idx - 1]);
+                    if ctrl_held {
+                        // Ctrl+Up = Move widget up in parent
+                        ctx.project_state.move_widget_up(current);
+                    } else {
+                        // Just navigate up
+                        if let Some(current_idx) = all_ids.iter().position(|id| *id == current) {
+                            if current_idx > 0 {
+                                ctx.project_state.selection.clear();
+                                ctx.project_state.selection.insert(all_ids[current_idx - 1]);
+                            }
                         }
                     }
                 } else if !all_ids.is_empty() {
@@ -54,10 +63,16 @@ pub fn render_hierarchy(ui: &mut Ui, ctx: &mut EditorContext) {
 
             if i.key_pressed(egui::Key::ArrowDown) {
                 if let Some(current) = current_selected {
-                    if let Some(current_idx) = all_ids.iter().position(|id| *id == current) {
-                        if current_idx < all_ids.len() - 1 {
-                            ctx.project_state.selection.clear();
-                            ctx.project_state.selection.insert(all_ids[current_idx + 1]);
+                    if ctrl_held {
+                        // Ctrl+Down = Move widget down in parent
+                        ctx.project_state.move_widget_down(current);
+                    } else {
+                        // Just navigate down
+                        if let Some(current_idx) = all_ids.iter().position(|id| *id == current) {
+                            if current_idx < all_ids.len() - 1 {
+                                ctx.project_state.selection.clear();
+                                ctx.project_state.selection.insert(all_ids[current_idx + 1]);
+                            }
                         }
                     }
                 } else if !all_ids.is_empty() {
@@ -67,6 +82,16 @@ pub fn render_hierarchy(ui: &mut Ui, ctx: &mut EditorContext) {
 
             if i.key_pressed(egui::Key::Escape) {
                 ctx.project_state.selection.clear();
+            }
+
+            // Delete key to remove selected widget
+            if i.key_pressed(egui::Key::Delete) || i.key_pressed(egui::Key::Backspace) {
+                if let Some(current) = current_selected {
+                    if current != ctx.project_state.root_node.id() {
+                        ctx.project_state.delete_widget(current);
+                        ctx.project_state.selection.clear();
+                    }
+                }
             }
         });
     }
