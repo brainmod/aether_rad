@@ -12,6 +12,7 @@ pub mod palette;
 pub mod variables;
 
 /// Shared context passed to all UI panels
+#[allow(dead_code)]
 pub struct EditorContext<'a> {
     pub project_state: &'a mut ProjectState,
     pub validation_status: &'a mut ValidationStatus,

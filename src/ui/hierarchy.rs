@@ -7,6 +7,7 @@ use uuid::Uuid;
 
 /// Payload for hierarchy drag-and-drop
 #[derive(Clone)]
+#[allow(dead_code)]
 struct HierarchyDragPayload {
     widget_id: Uuid,
     widget_name: String,
@@ -14,6 +15,7 @@ struct HierarchyDragPayload {
 
 /// Position for drop operations
 #[derive(Clone, Copy, Debug)]
+#[allow(dead_code)]
 enum DropPosition {
     Before,
     After,
@@ -230,7 +232,7 @@ fn draw_hierarchy_node_styled(
             let state_id = ui.make_persistent_id(id);
             let state = egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), state_id, true);
 
-            state.show_header(ui, |ui| {
+            let _ = state.show_header(ui, |ui| {
                 // Make ONLY the header content draggable
                 ui.dnd_drag_source(drag_id, payload.clone(), |ui| {
                     let response = ui.selectable_label(

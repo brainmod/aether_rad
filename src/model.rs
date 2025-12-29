@@ -73,11 +73,13 @@ impl AssetManager {
     }
 
     /// Get an asset by name
+    #[allow(dead_code)]
     pub fn get_asset(&self, name: &str) -> Option<&Asset> {
         self.assets.get(name)
     }
 
     /// Get all image assets
+    #[allow(dead_code)]
     pub fn get_images(&self) -> Vec<&Asset> {
         self.assets
             .values()
@@ -86,6 +88,7 @@ impl AssetManager {
     }
 
     /// List all asset names
+    #[allow(dead_code)]
     pub fn asset_names(&self) -> Vec<&str> {
         self.assets.keys().map(|s| s.as_str()).collect()
     }
@@ -455,8 +458,8 @@ impl ProjectState {
         project
     }
 
-    /// Serialize the entire project state to JSON.
-    /// [cite: 64]
+    /// Serialize the entire project state to JSON
+    #[allow(dead_code)]
     pub fn to_json(&self) -> String {
         serde_json::to_string_pretty(self).unwrap_or_default()
     }
@@ -606,6 +609,7 @@ impl ProjectState {
     }
 
     /// Check if a widget is a container that can accept children
+    #[allow(dead_code)]
     pub fn is_container(&self, widget_id: Uuid) -> bool {
         if let Some(node) = find_node_by_id(self.root_node.as_ref(), widget_id) {
             return is_container(node);
@@ -771,6 +775,7 @@ fn insert_widget_at(node: &mut dyn WidgetNode, target_id: Uuid, widget: Box<dyn 
 }
 
 /// Check if a widget is a container (has children capability)
+#[allow(dead_code)]
 pub fn is_container(node: &dyn WidgetNode) -> bool {
     node.children().is_some()
 }

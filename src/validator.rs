@@ -3,6 +3,7 @@ use crate::model::ProjectState;
 use std::process::Command;
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub enum ValidationStatus {
     NotRun,
     Checking,

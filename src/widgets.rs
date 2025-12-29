@@ -122,6 +122,7 @@ fn handle_selection(ui: &egui::Ui, widget_id: Uuid, response_clicked: bool, sele
 
 /// Context menu action for widgets
 #[derive(Debug, Clone, PartialEq)]
+#[allow(dead_code)]
 pub enum ContextMenuAction {
     None,
     Delete,
@@ -432,7 +433,7 @@ impl WidgetNode for VerticalLayout {
                             if ui.rect_contains_pointer(ui.min_rect()) {
                                 ui.add_space(self.spacing);
                                 ui.vertical(|ui| {
-                                    ui.set_enabled(false); // Make it look like a ghost
+                                    ui.disable(); // Make it look like a ghost
                                     ui.ctx().set_cursor_icon(egui::CursorIcon::Copy); // Indicate copy/add
                                     render_widget_preview(ui, &dragged_type, egui::Color32::WHITE);
                                 });
@@ -1035,7 +1036,7 @@ pub fn render_widget_preview(ui: &mut Ui, widget_type: &str, accent_color: egui:
 
     match widget_type {
         "Button" => {
-            ui.button("Click Me");
+            let _ = ui.button("Click Me");
         }
         "Label" => {
             ui.label("Label Text");
@@ -3507,7 +3508,7 @@ impl WidgetNode for FreeformLayout {
     }
 
     fn render_editor(&mut self, ui: &mut Ui, selection: &mut HashSet<Uuid>) {
-        let container_rect = egui::Rect::from_min_size(
+        let _container_rect = egui::Rect::from_min_size(
             ui.cursor().min,
             egui::vec2(self.width, self.height),
         );
@@ -3613,7 +3614,7 @@ impl WidgetNode for FreeformLayout {
 
         // Handle drag movement
         if let Some(idx) = dragged_child_idx {
-            if let Some(pointer_pos) = ui.ctx().pointer_interact_pos() {
+            if let Some(_pointer_pos) = ui.ctx().pointer_interact_pos() {
                 let delta = ui.ctx().input(|i| i.pointer.delta());
                 let child = &mut self.children[idx];
 
@@ -3647,7 +3648,7 @@ impl WidgetNode for FreeformLayout {
             egui::vec2(self.width, 24.0),
         );
 
-        let drop_response = ui.allocate_rect(drop_rect, egui::Sense::hover());
+        let _drop_response = ui.allocate_rect(drop_rect, egui::Sense::hover());
 
         // Check for drops
         let (_drop_response, payload_option) = ui.dnd_drop_zone::<String, _>(egui::Frame::NONE, |ui| {
@@ -3814,7 +3815,7 @@ impl WidgetNode for TableWidget {
 
     fn render_editor(&mut self, ui: &mut Ui, selection: &mut HashSet<Uuid>) {
         // Wrap table in a Frame so we have a bounding box for selection
-        let frame = egui::Frame::none().inner_margin(0.0);
+        let frame = egui::Frame::NONE.inner_margin(0.0);
         let response = frame.show(ui, |ui| {
              let available_height = 150.0; // Fixed height for editor preview
              let mut table = egui_extras::TableBuilder::new(ui)

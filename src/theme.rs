@@ -19,6 +19,7 @@ impl ThemeMode {
 /// Aether RAD color palette
 pub struct AetherColors;
 
+#[allow(dead_code)]
 impl AetherColors {
     // Primary accent color (blue)
     pub const ACCENT: Color32 = Color32::from_rgb(66, 150, 250);
@@ -103,6 +104,7 @@ impl WidgetLabels {
     }
 
     /// Get the widget type group (for color coding)
+    #[allow(dead_code)]
     pub fn get_category(widget_name: &str) -> &'static str {
         match widget_name {
             "Vertical Layout" | "Horizontal Layout" | "Grid Layout" | "Freeform Layout" | "Scroll Area" | "Tab Container" | "Window" => "Layouts",
@@ -116,6 +118,7 @@ impl WidgetLabels {
 /// Light mode color palette
 pub struct LightModeColors;
 
+#[allow(dead_code)]
 impl LightModeColors {
     // Primary accent color (blue)
     pub const ACCENT: Color32 = Color32::from_rgb(45, 120, 210);
@@ -247,6 +250,7 @@ pub fn section_frame(ctx: &egui::Context) -> egui::Frame {
 }
 
 /// Create a panel header frame (theme-aware)
+#[allow(dead_code)]
 pub fn panel_header_frame(ctx: &egui::Context) -> egui::Frame {
     let is_light = !ctx.style().visuals.dark_mode;
     let bg_color = if is_light {
@@ -301,6 +305,7 @@ pub fn category_label(category: &str) -> egui::RichText {
 }
 
 /// Widget label for hierarchy/palette
+#[allow(dead_code)]
 pub fn widget_label(widget_name: &str) -> String {
     WidgetLabels::get(widget_name).to_string()
 }
