@@ -8,6 +8,34 @@ use uuid::Uuid;
 // ... existing imports
 // Ensure you import ButtonWidget and the necessary macros
 
+/// Create a widget by its display name
+pub fn create_widget_by_name(name: &str) -> Option<Box<dyn WidgetNode>> {
+    Some(match name {
+        "Button" => Box::new(ButtonWidget::default()),
+        "Label" => Box::new(LabelWidget::default()),
+        "Text Edit" => Box::new(TextEditWidget::default()),
+        "Checkbox" => Box::new(CheckboxWidget::default()),
+        "Slider" => Box::new(SliderWidget::default()),
+        "Progress Bar" => Box::new(ProgressBarWidget::default()),
+        "ComboBox" => Box::new(ComboBoxWidget::default()),
+        "Image" => Box::new(ImageWidget::default()),
+        "Vertical Layout" => Box::new(VerticalLayout::default()),
+        "Horizontal Layout" => Box::new(HorizontalLayout::default()),
+        "Grid Layout" => Box::new(GridLayout::default()),
+        "Freeform Layout" => Box::new(FreeformLayout::default()),
+        "Separator" => Box::new(SeparatorWidget::default()),
+        "Spinner" => Box::new(SpinnerWidget::default()),
+        "Hyperlink" => Box::new(HyperlinkWidget::default()),
+        "Color Picker" => Box::new(ColorPickerWidget::default()),
+        "Table" => Box::new(TableWidget::default()),
+        "Plot" => Box::new(PlotWidget::default()),
+        "Scroll Area" => Box::new(ScrollAreaWidget::default()),
+        "Tab Container" => Box::new(TabContainerWidget::default()),
+        "Window" => Box::new(WindowWidget::default()),
+        _ => return None,
+    })
+}
+
 // === Gizmo Helper Functions ===
 
 const GIZMO_COLOR: egui::Color32 = egui::Color32::from_rgb(255, 165, 0);
@@ -426,33 +454,10 @@ impl WidgetNode for VerticalLayout {
 
         // Handle Drop
         if let Some(payload) = payload_option {
-            // Check if dropped
             if ui.input(|i| i.pointer.any_released()) {
-                let new_widget: Box<dyn WidgetNode> = match payload.as_str() {
-                    "Button" => Box::new(ButtonWidget::default()),
-                    "Label" => Box::new(LabelWidget::default()),
-                    "Text Edit" => Box::new(TextEditWidget::default()),
-                    "Checkbox" => Box::new(CheckboxWidget::default()),
-                    "Slider" => Box::new(SliderWidget::default()),
-                    "Progress Bar" => Box::new(ProgressBarWidget::default()),
-                    "ComboBox" => Box::new(ComboBoxWidget::default()),
-                    "Image" => Box::new(ImageWidget::default()),
-                    "Vertical Layout" => Box::new(VerticalLayout::default()),
-                    "Horizontal Layout" => Box::new(HorizontalLayout::default()),
-                    "Grid Layout" => Box::new(GridLayout::default()),
-                    "Separator" => Box::new(SeparatorWidget::default()),
-                    "Spinner" => Box::new(SpinnerWidget::default()),
-                    "Hyperlink" => Box::new(HyperlinkWidget::default()),
-                    "Color Picker" => Box::new(ColorPickerWidget::default()),
-                    "Table" => Box::new(TableWidget::default()),
-                    "Plot" => Box::new(PlotWidget::default()),
-                    "Scroll Area" => Box::new(ScrollAreaWidget::default()),
-                    "Tab Container" => Box::new(TabContainerWidget::default()),
-                    "Window" => Box::new(WindowWidget::default()),
-                    "Freeform Layout" => Box::new(FreeformLayout::default()),
-                    _ => return,
-                };
-                self.children.push(new_widget);
+                if let Some(new_widget) = create_widget_by_name(&payload) {
+                    self.children.push(new_widget);
+                }
             }
         }
     }
@@ -614,31 +619,9 @@ impl WidgetNode for HorizontalLayout {
 
         if let Some(payload) = payload_option {
             if ui.input(|i| i.pointer.any_released()) {
-                let new_widget: Box<dyn WidgetNode> = match payload.as_str() {
-                    "Button" => Box::new(ButtonWidget::default()),
-                    "Label" => Box::new(LabelWidget::default()),
-                    "Text Edit" => Box::new(TextEditWidget::default()),
-                    "Checkbox" => Box::new(CheckboxWidget::default()),
-                    "Slider" => Box::new(SliderWidget::default()),
-                    "Progress Bar" => Box::new(ProgressBarWidget::default()),
-                    "ComboBox" => Box::new(ComboBoxWidget::default()),
-                    "Image" => Box::new(ImageWidget::default()),
-                    "Vertical Layout" => Box::new(VerticalLayout::default()),
-                    "Horizontal Layout" => Box::new(HorizontalLayout::default()),
-                    "Grid Layout" => Box::new(GridLayout::default()),
-                    "Separator" => Box::new(SeparatorWidget::default()),
-                    "Spinner" => Box::new(SpinnerWidget::default()),
-                    "Hyperlink" => Box::new(HyperlinkWidget::default()),
-                    "Color Picker" => Box::new(ColorPickerWidget::default()),
-                    "Table" => Box::new(TableWidget::default()),
-                    "Plot" => Box::new(PlotWidget::default()),
-                    "Scroll Area" => Box::new(ScrollAreaWidget::default()),
-                    "Tab Container" => Box::new(TabContainerWidget::default()),
-                    "Window" => Box::new(WindowWidget::default()),
-                    "Freeform Layout" => Box::new(FreeformLayout::default()),
-                    _ => return,
-                };
-                self.children.push(new_widget);
+                if let Some(new_widget) = create_widget_by_name(&payload) {
+                    self.children.push(new_widget);
+                }
             }
         }
     }
@@ -757,31 +740,9 @@ impl WidgetNode for GridLayout {
 
         if let Some(payload) = payload_option {
             if ui.input(|i| i.pointer.any_released()) {
-                let new_widget: Box<dyn WidgetNode> = match payload.as_str() {
-                    "Button" => Box::new(ButtonWidget::default()),
-                    "Label" => Box::new(LabelWidget::default()),
-                    "Text Edit" => Box::new(TextEditWidget::default()),
-                    "Checkbox" => Box::new(CheckboxWidget::default()),
-                    "Slider" => Box::new(SliderWidget::default()),
-                    "Progress Bar" => Box::new(ProgressBarWidget::default()),
-                    "ComboBox" => Box::new(ComboBoxWidget::default()),
-                    "Image" => Box::new(ImageWidget::default()),
-                    "Vertical Layout" => Box::new(VerticalLayout::default()),
-                    "Horizontal Layout" => Box::new(HorizontalLayout::default()),
-                    "Grid Layout" => Box::new(GridLayout::default()),
-                    "Separator" => Box::new(SeparatorWidget::default()),
-                    "Spinner" => Box::new(SpinnerWidget::default()),
-                    "Hyperlink" => Box::new(HyperlinkWidget::default()),
-                    "Color Picker" => Box::new(ColorPickerWidget::default()),
-                    "Table" => Box::new(TableWidget::default()),
-                    "Plot" => Box::new(PlotWidget::default()),
-                    "Scroll Area" => Box::new(ScrollAreaWidget::default()),
-                    "Tab Container" => Box::new(TabContainerWidget::default()),
-                    "Window" => Box::new(WindowWidget::default()),
-                    "Freeform Layout" => Box::new(FreeformLayout::default()),
-                    _ => return,
-                };
-                self.children.push(new_widget);
+                if let Some(new_widget) = create_widget_by_name(&payload) {
+                    self.children.push(new_widget);
+                }
             }
         }
     }
@@ -2875,30 +2836,9 @@ impl WidgetNode for WindowWidget {
 
             if let Some(payload) = payload_option {
                 if ui.input(|i| i.pointer.any_released()) {
-                    let new_widget: Box<dyn WidgetNode> = match payload.as_str() {
-                        "Button" => Box::new(ButtonWidget::default()),
-                        "Label" => Box::new(LabelWidget::default()),
-                        "Text Edit" => Box::new(TextEditWidget::default()),
-                        "Checkbox" => Box::new(CheckboxWidget::default()),
-                        "Slider" => Box::new(SliderWidget::default()),
-                        "Progress Bar" => Box::new(ProgressBarWidget::default()),
-                        "ComboBox" => Box::new(ComboBoxWidget::default()),
-                        "Image" => Box::new(ImageWidget::default()),
-                        "Vertical Layout" => Box::new(VerticalLayout::default()),
-                        "Horizontal Layout" => Box::new(HorizontalLayout::default()),
-                        "Grid Layout" => Box::new(GridLayout::default()),
-                        "Separator" => Box::new(SeparatorWidget::default()),
-                        "Spinner" => Box::new(SpinnerWidget::default()),
-                        "Hyperlink" => Box::new(HyperlinkWidget::default()),
-                        "Color Picker" => Box::new(ColorPickerWidget::default()),
-                    "Table" => Box::new(TableWidget::default()),
-                    "Plot" => Box::new(PlotWidget::default()),
-                        "Scroll Area" => Box::new(ScrollAreaWidget::default()),
-                        "Tab Container" => Box::new(TabContainerWidget::default()),
-                        "Window" => Box::new(WindowWidget::default()),
-                        _ => return,
-                    };
-                    self.children.push(new_widget);
+                    if let Some(new_widget) = create_widget_by_name(&payload) {
+                        self.children.push(new_widget);
+                    }
                 }
             }
         }).response;
@@ -3089,30 +3029,9 @@ impl WidgetNode for TabContainerWidget {
 
                 if let Some(payload) = payload_option {
                     if ui.input(|i| i.pointer.any_released()) {
-                        let new_widget: Box<dyn WidgetNode> = match payload.as_str() {
-                            "Button" => Box::new(ButtonWidget::default()),
-                            "Label" => Box::new(LabelWidget::default()),
-                            "Text Edit" => Box::new(TextEditWidget::default()),
-                            "Checkbox" => Box::new(CheckboxWidget::default()),
-                            "Slider" => Box::new(SliderWidget::default()),
-                            "Progress Bar" => Box::new(ProgressBarWidget::default()),
-                            "ComboBox" => Box::new(ComboBoxWidget::default()),
-                            "Image" => Box::new(ImageWidget::default()),
-                            "Vertical Layout" => Box::new(VerticalLayout::default()),
-                            "Horizontal Layout" => Box::new(HorizontalLayout::default()),
-                            "Grid Layout" => Box::new(GridLayout::default()),
-                            "Separator" => Box::new(SeparatorWidget::default()),
-                            "Spinner" => Box::new(SpinnerWidget::default()),
-                            "Hyperlink" => Box::new(HyperlinkWidget::default()),
-                            "Color Picker" => Box::new(ColorPickerWidget::default()),
-                    "Table" => Box::new(TableWidget::default()),
-                    "Plot" => Box::new(PlotWidget::default()),
-                            "Scroll Area" => Box::new(ScrollAreaWidget::default()),
-                            "Tab Container" => Box::new(TabContainerWidget::default()),
-                            "Window" => Box::new(WindowWidget::default()),
-                            _ => return,
-                        };
-                        tab.children.push(new_widget);
+                        if let Some(new_widget) = create_widget_by_name(&payload) {
+                            tab.children.push(new_widget);
+                        }
                     }
                 }
             }
@@ -3287,30 +3206,9 @@ impl WidgetNode for ScrollAreaWidget {
 
                 if let Some(payload) = payload_option {
                     if ui.input(|i| i.pointer.any_released()) {
-                        let new_widget: Box<dyn WidgetNode> = match payload.as_str() {
-                            "Button" => Box::new(ButtonWidget::default()),
-                            "Label" => Box::new(LabelWidget::default()),
-                            "Text Edit" => Box::new(TextEditWidget::default()),
-                            "Checkbox" => Box::new(CheckboxWidget::default()),
-                            "Slider" => Box::new(SliderWidget::default()),
-                            "Progress Bar" => Box::new(ProgressBarWidget::default()),
-                            "ComboBox" => Box::new(ComboBoxWidget::default()),
-                            "Image" => Box::new(ImageWidget::default()),
-                            "Vertical Layout" => Box::new(VerticalLayout::default()),
-                            "Horizontal Layout" => Box::new(HorizontalLayout::default()),
-                            "Grid Layout" => Box::new(GridLayout::default()),
-                            "Separator" => Box::new(SeparatorWidget::default()),
-                            "Spinner" => Box::new(SpinnerWidget::default()),
-                            "Hyperlink" => Box::new(HyperlinkWidget::default()),
-                            "Color Picker" => Box::new(ColorPickerWidget::default()),
-                    "Table" => Box::new(TableWidget::default()),
-                    "Plot" => Box::new(PlotWidget::default()),
-                            "Scroll Area" => Box::new(ScrollAreaWidget::default()),
-                            "Tab Container" => Box::new(TabContainerWidget::default()),
-                            "Window" => Box::new(WindowWidget::default()),
-                            _ => return,
-                        };
-                        self.children.push(new_widget);
+                        if let Some(new_widget) = create_widget_by_name(&payload) {
+                            self.children.push(new_widget);
+                        }
                     }
                 }
             })
@@ -3758,28 +3656,10 @@ impl WidgetNode for FreeformLayout {
 
         if let Some(payload) = payload_option {
             if ui.input(|i| i.pointer.any_released()) {
-                let drop_pos = ui.ctx().pointer_hover_pos().unwrap_or(container_origin);
-                let relative_pos = drop_pos - container_origin;
+                if let Some(widget) = create_widget_by_name(&payload) {
+                    let drop_pos = ui.ctx().pointer_hover_pos().unwrap_or(container_origin);
+                    let relative_pos = drop_pos - container_origin;
 
-                let new_widget: Option<Box<dyn WidgetNode>> = match payload.as_str() {
-                    "Button" => Some(Box::new(ButtonWidget::default())),
-                    "Label" => Some(Box::new(LabelWidget::default())),
-                    "Text Edit" => Some(Box::new(TextEditWidget::default())),
-                    "Checkbox" => Some(Box::new(CheckboxWidget::default())),
-                    "Slider" => Some(Box::new(SliderWidget::default())),
-                    "Progress Bar" => Some(Box::new(ProgressBarWidget::default())),
-                    "ComboBox" => Some(Box::new(ComboBoxWidget::default())),
-                    "Image" => Some(Box::new(ImageWidget::default())),
-                    "Separator" => Some(Box::new(SeparatorWidget::default())),
-                    "Spinner" => Some(Box::new(SpinnerWidget::default())),
-                    "Hyperlink" => Some(Box::new(HyperlinkWidget::default())),
-                    "Color Picker" => Some(Box::new(ColorPickerWidget::default())),
-                    "Table" => Some(Box::new(TableWidget::default())),
-                    "Plot" => Some(Box::new(PlotWidget::default())),
-                    _ => None,
-                };
-
-                if let Some(widget) = new_widget {
                     let x = if self.snap_to_grid {
                         (relative_pos.x / self.grid_size).round() * self.grid_size
                     } else {
