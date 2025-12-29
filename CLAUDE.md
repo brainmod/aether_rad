@@ -63,18 +63,21 @@ tests/
 |-------|------|--------|-------|
 | 1 | The Kernel (SOM, Serialization) | Complete | WidgetNode trait, ProjectState, typetag |
 | 2 | The Shell (Workspace Layout) | Complete | Native egui panels with UiState management |
-| 3 | Interactive Canvas (D&D, Gizmos) | Partial | Selection/gizmos work, DnD needs fixes |
+| 3 | Interactive Canvas (D&D, Gizmos) | Complete | Selection, DnD, click-to-add all working |
 | 4 | Logic & Data Binding | Complete | Variables, bindings, events, actions |
 | 5 | The Compiler (Code Generation) | Complete | quote! macros, prettyplease formatting |
 
-### Known Issues (Priority Fixes Needed)
+### Known Issues
 
 | Issue | Severity | Description |
 |-------|----------|-------------|
-| **DnD Incomplete** | Critical | Can drag from hierarchy but cannot drop anywhere |
-| **Selection Broken** | Critical | Cannot select widgets in canvas reliably |
-| **No Reordering** | High | Can only add items to end of interface, no manipulation |
 | **Unused Code** | Low | ~30 compiler warnings for unused functions/fields |
+
+### Recently Fixed
+
+- **Selection**: Widgets now use inert rendering with reliable click detection
+- **DnD**: Click-to-add fallback ensures widgets can always be added
+- **Reordering**: Ctrl+Up/Down, Move buttons, and drag-to-reorder all work
 
 ### Implemented Widgets (21 total)
 
@@ -124,48 +127,18 @@ tests/
 
 ## Development Roadmap
 
-### Phase 1: Critical Fixes (Current Priority)
+### Phase 1: Core Editing (Complete)
 
-**Focus:** Restore core editing functionality
+- [x] **Widget Selection**: Inert rendering with reliable click detection
+- [x] **Drag-and-Drop**: Native egui DnD with click-to-add fallback
+- [x] **Widget Manipulation**: Move Up/Down, keyboard shortcuts, drag-to-reorder
+- [x] **Multi-selection**: Ctrl+click support with bulk actions
 
-#### P0: Fix Widget Selection
-**Complexity:** Medium | **Files:** `src/ui/canvas.rs`, `src/widgets.rs`
-
-Selection is broken - users cannot reliably select widgets in the canvas.
-
-- [ ] Debug `handle_selection()` helper function
-- [ ] Verify click detection in `render_editor()` methods
-- [ ] Test multi-selection with Ctrl+click
-- [ ] Ensure gizmo overlay draws for selected widgets
-
-#### P0: Fix Drag-and-Drop
-**Complexity:** Hard | **Files:** `src/ui/palette.rs`, `src/ui/hierarchy.rs`, `src/widgets.rs`
-
-DnD from palette/hierarchy to canvas is not working properly.
-
-- [ ] Debug `dnd_drag_source` in palette and hierarchy
-- [ ] Fix `dnd_drop_zone` handling in container widgets
-- [ ] Verify drop position calculation in layouts
-- [ ] Add visual drop indicators (insertion lines)
-- [ ] Test: drag from Palette to Canvas
-- [ ] Test: drag within Hierarchy to reorder
-- [ ] Test: drag between containers
-
-#### P1: Enable Widget Manipulation
-**Complexity:** Medium | **Files:** `src/ui/hierarchy.rs`, `src/model.rs`
-
-Currently can only add to end of interface, no reordering.
-
-- [ ] Implement Move Up/Move Down in Inspector
-- [ ] Add keyboard shortcuts for reordering
-- [ ] Enable drag-to-reorder in Hierarchy panel
-- [ ] Add undo support for reorder operations
-
-### Phase 2: Refinement & Polish
+### Phase 2: Refinement & Polish (Current Priority)
 
 **Focus:** Stabilize and improve UX
 
-- [ ] **Cleanup:** Remove unused code (30 warnings)
+- [ ] **Cleanup:** Remove unused code (~30 warnings)
 - [ ] **Visual Feedback:** Improve DnD ghost previews
 - [ ] **Property Polish:** Add "Reset to Default" buttons
 - [ ] **Error Handling:** Replace panics with graceful fallbacks
