@@ -208,6 +208,8 @@ fn draw_hierarchy_node_styled(
                 }).response;
 
                 // Check for hover during drag - show insertion indicator
+                // Note: For containers, "Into" is handled by the dedicated drop zone below
+                // Header only handles Before/After to avoid duplicate drop targets
                 if let (Some(pointer), Some(hovered_payload)) = (
                     ui.input(|i| i.pointer.interact_pos()),
                     drag_response.dnd_hover_payload::<HierarchyDragPayload>(),
@@ -224,17 +226,10 @@ fn draw_hierarchy_node_styled(
                                 *pending_drop = Some((released.widget_id, id, DropPosition::Before));
                             }
                         } else {
-                            // Insert after (or into if container)
-                            if is_container {
-                                ui.painter().rect_stroke(rect.expand(2.0), 4.0, stroke, egui::StrokeKind::Outside);
-                                if let Some(released) = drag_response.dnd_release_payload::<HierarchyDragPayload>() {
-                                    *pending_drop = Some((released.widget_id, id, DropPosition::Into));
-                                }
-                            } else {
-                                ui.painter().hline(rect.x_range(), rect.bottom() + 1.0, stroke);
-                                if let Some(released) = drag_response.dnd_release_payload::<HierarchyDragPayload>() {
-                                    *pending_drop = Some((released.widget_id, id, DropPosition::After));
-                                }
+                            // Insert after
+                            ui.painter().hline(rect.x_range(), rect.bottom() + 1.0, stroke);
+                            if let Some(released) = drag_response.dnd_release_payload::<HierarchyDragPayload>() {
+                                *pending_drop = Some((released.widget_id, id, DropPosition::After));
                             }
                         }
                     }
@@ -247,8 +242,12 @@ fn draw_hierarchy_node_styled(
         if egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), state_id, true).is_open() {
             // Container drop zone (for dropping INTO this container)
             if is_container {
+                // Only show drop zone if something is being dragged
+                let is_dragging = ui.ctx().dragged_id().is_some();
+                let zone_height = if is_dragging { 16.0 } else { 4.0 };
+
                 let (drop_rect, drop_response) = ui.allocate_exact_size(
-                    egui::vec2(ui.available_width(), 8.0),
+                    egui::vec2(ui.available_width(), zone_height),
                     egui::Sense::hover(),
                 );
 
@@ -259,7 +258,7 @@ fn draw_hierarchy_node_styled(
                         ui.painter().rect_filled(
                             drop_rect,
                             2.0,
-                            Color32::from_rgba_unmultiplied(100, 200, 100, 100),
+                            Color32::from_rgba_unmultiplied(100, 200, 100, 120),
                         );
                         ui.painter().rect_stroke(
                             drop_rect,
@@ -268,11 +267,29 @@ fn draw_hierarchy_node_styled(
                             egui::StrokeKind::Inside,
                         );
 
+                        // Show hint text
+                        let text = format!("▸ Drop into {}", label);
+                        ui.painter().text(
+                            drop_rect.center(),
+                            egui::Align2::CENTER_CENTER,
+                            text,
+                            egui::FontId::proportional(9.0),
+                            AetherColors::ACCENT,
+                        );
+
                         // Handle drop
                         if let Some(released) = drop_response.dnd_release_payload::<HierarchyDragPayload>() {
                             *pending_drop = Some((released.widget_id, id, DropPosition::Into));
                         }
                     }
+                } else if is_dragging {
+                    // Show faint hint when dragging but not hovering
+                    ui.painter().rect_stroke(
+                        drop_rect,
+                        2.0,
+                        egui::Stroke::new(1.0, Color32::from_rgba_unmultiplied(100, 200, 100, 80)),
+                        egui::StrokeKind::Inside,
+                    );
                 }
             }
 

@@ -112,6 +112,32 @@ fn draw_drop_zone_indicator(ui: &egui::Ui, rect: egui::Rect) {
     ui.painter().rect_filled(rect, 4.0, fill_color);
 }
 
+/// Draw a labeled drop zone indicator showing the container type
+fn draw_labeled_drop_zone(ui: &egui::Ui, rect: egui::Rect, label: &str) {
+    // Draw the base indicator
+    draw_drop_zone_indicator(ui, rect);
+
+    // Add a small label at the top-left corner
+    let label_pos = rect.left_top() + egui::vec2(4.0, 4.0);
+    let galley = ui.painter().layout_no_wrap(
+        label.to_string(),
+        egui::FontId::proportional(10.0),
+        DROP_ZONE_COLOR,
+    );
+
+    // Background for the label
+    let label_rect = egui::Rect::from_min_size(
+        label_pos - egui::vec2(2.0, 1.0),
+        galley.size() + egui::vec2(4.0, 2.0),
+    );
+    ui.painter().rect_filled(
+        label_rect,
+        2.0,
+        egui::Color32::from_rgba_unmultiplied(0, 0, 0, 180),
+    );
+    ui.painter().galley(label_pos, galley, egui::Color32::WHITE);
+}
+
 /// Draw resize handles at the corners and edges of a rect
 fn draw_resize_handles(ui: &egui::Ui, rect: egui::Rect) {
     let handles = [
@@ -197,13 +223,15 @@ pub enum ContextMenuAction {
 /// Create an interaction overlay for more reliable selection hit detection
 /// This adds an expanded clickable area around the widget rect
 /// Returns both the response and any context menu action triggered
+/// NOTE: Uses click-only sense so parent dnd_drag_source can handle dragging
 fn create_selection_overlay(ui: &mut egui::Ui, rect: egui::Rect, widget_id: Uuid) -> egui::Response {
     // Expand the rect slightly for easier clicking
     let expanded_rect = rect.expand(4.0);
 
     // Create an invisible interaction layer over the widget
+    // Use click-only sense so parent dnd_drag_source can handle drag events
     let id = egui::Id::new("select_overlay").with(widget_id);
-    let response = ui.interact(expanded_rect, id, egui::Sense::click_and_drag());
+    let response = ui.interact(expanded_rect, id, egui::Sense::click());
 
     // Add context menu on right-click
     response.clone().context_menu(|ui| {
@@ -491,11 +519,41 @@ impl WidgetNode for VerticalLayout {
                 // Render each child as a drag source
                 for (idx, child) in self.children.iter_mut().enumerate() {
                     let child_id = child.id();
+                    let child_name = child.name().to_string();
                     let item_id = egui::Id::new("vl_child").with(self.id).with(child_id);
                     let payload = DragPayload::ExistingWidget(child_id);
 
+                    // Check if this child is being dragged
+                    let is_being_dragged = ui.ctx().is_being_dragged(item_id);
+
+                    // Show drag preview at cursor when dragging
+                    if is_being_dragged {
+                        if let Some(pos) = ui.ctx().pointer_hover_pos() {
+                            egui::Area::new(egui::Id::new("canvas_drag_preview").with(child_id))
+                                .order(egui::Order::Tooltip)
+                                .fixed_pos(pos + egui::vec2(12.0, 12.0))
+                                .show(ui.ctx(), |ui| {
+                                    let cat_color = crate::theme::widget_category_color(&child_name);
+                                    egui::Frame::new()
+                                        .fill(ui.style().visuals.window_fill.linear_multiply(0.85))
+                                        .stroke(egui::Stroke::new(2.0, cat_color))
+                                        .corner_radius(egui::CornerRadius::same(4))
+                                        .inner_margin(egui::Margin::same(6))
+                                        .show(ui, |ui| {
+                                            ui.label(egui::RichText::new(crate::theme::WidgetLabels::get(&child_name))
+                                                .color(cat_color)
+                                                .strong());
+                                        });
+                                });
+                        }
+                    }
+
                     // Create drag source for this child
                     let child_response = ui.dnd_drag_source(item_id, payload, |ui| {
+                        // Dim the widget slightly when being dragged
+                        if is_being_dragged {
+                            ui.disable();
+                        }
                         child.render_editor(ui, selection);
                     }).response;
 
@@ -573,7 +631,7 @@ impl WidgetNode for VerticalLayout {
 
         // Draw drop zone indicator when any payload is hovering
         if drop_response.response.contains_pointer() && ui.ctx().dragged_id().is_some() {
-            draw_drop_zone_indicator(ui, widget_rect);
+            draw_labeled_drop_zone(ui, widget_rect, "▼ Vertical Layout");
         }
 
         // Gizmo (Outline) if selected
@@ -717,11 +775,40 @@ impl WidgetNode for HorizontalLayout {
                 // Render each child as a drag source
                 for (idx, child) in self.children.iter_mut().enumerate() {
                     let child_id = child.id();
+                    let child_name = child.name().to_string();
                     let item_id = egui::Id::new("hl_child").with(self.id).with(child_id);
                     let payload = DragPayload::ExistingWidget(child_id);
 
+                    // Check if this child is being dragged
+                    let is_being_dragged = ui.ctx().is_being_dragged(item_id);
+
+                    // Show drag preview at cursor when dragging
+                    if is_being_dragged {
+                        if let Some(pos) = ui.ctx().pointer_hover_pos() {
+                            egui::Area::new(egui::Id::new("canvas_drag_preview").with(child_id))
+                                .order(egui::Order::Tooltip)
+                                .fixed_pos(pos + egui::vec2(12.0, 12.0))
+                                .show(ui.ctx(), |ui| {
+                                    let cat_color = crate::theme::widget_category_color(&child_name);
+                                    egui::Frame::new()
+                                        .fill(ui.style().visuals.window_fill.linear_multiply(0.85))
+                                        .stroke(egui::Stroke::new(2.0, cat_color))
+                                        .corner_radius(egui::CornerRadius::same(4))
+                                        .inner_margin(egui::Margin::same(6))
+                                        .show(ui, |ui| {
+                                            ui.label(egui::RichText::new(crate::theme::WidgetLabels::get(&child_name))
+                                                .color(cat_color)
+                                                .strong());
+                                        });
+                                });
+                        }
+                    }
+
                     // Create drag source for this child
                     let child_response = ui.dnd_drag_source(item_id, payload, |ui| {
+                        if is_being_dragged {
+                            ui.disable();
+                        }
                         child.render_editor(ui, selection);
                     }).response;
 
@@ -796,7 +883,7 @@ impl WidgetNode for HorizontalLayout {
 
         // Draw drop zone indicator when any payload is hovering
         if drop_response.response.contains_pointer() && ui.ctx().dragged_id().is_some() {
-            draw_drop_zone_indicator(ui, widget_rect);
+            draw_labeled_drop_zone(ui, widget_rect, "► Horizontal Layout");
         }
 
         if selection.contains(&self.id) {
@@ -895,10 +982,39 @@ impl WidgetNode for GridLayout {
                         for idx in row_start..row_end {
                             let child = &mut self.children[idx];
                             let child_id = child.id();
+                            let child_name = child.name().to_string();
                             let item_id = egui::Id::new("gl_child").with(self.id).with(child_id);
                             let payload = DragPayload::ExistingWidget(child_id);
 
+                            // Check if this child is being dragged
+                            let is_being_dragged = ui.ctx().is_being_dragged(item_id);
+
+                            // Show drag preview at cursor when dragging
+                            if is_being_dragged {
+                                if let Some(pos) = ui.ctx().pointer_hover_pos() {
+                                    egui::Area::new(egui::Id::new("canvas_drag_preview").with(child_id))
+                                        .order(egui::Order::Tooltip)
+                                        .fixed_pos(pos + egui::vec2(12.0, 12.0))
+                                        .show(ui.ctx(), |ui| {
+                                            let cat_color = crate::theme::widget_category_color(&child_name);
+                                            egui::Frame::new()
+                                                .fill(ui.style().visuals.window_fill.linear_multiply(0.85))
+                                                .stroke(egui::Stroke::new(2.0, cat_color))
+                                                .corner_radius(egui::CornerRadius::same(4))
+                                                .inner_margin(egui::Margin::same(6))
+                                                .show(ui, |ui| {
+                                                    ui.label(egui::RichText::new(crate::theme::WidgetLabels::get(&child_name))
+                                                        .color(cat_color)
+                                                        .strong());
+                                                });
+                                        });
+                                }
+                            }
+
                             let child_response = ui.dnd_drag_source(item_id, payload, |ui| {
+                                if is_being_dragged {
+                                    ui.disable();
+                                }
                                 child.render_editor(ui, selection);
                             }).response;
 
@@ -973,7 +1089,7 @@ impl WidgetNode for GridLayout {
 
         // Draw drop zone indicator when any payload is hovering
         if drop_response.response.contains_pointer() && ui.ctx().dragged_id().is_some() {
-            draw_drop_zone_indicator(ui, widget_rect);
+            draw_labeled_drop_zone(ui, widget_rect, "⊞ Grid Layout");
         }
 
         if selection.contains(&self.id) {
@@ -1263,6 +1379,7 @@ pub fn reset_button<T: PartialEq + Clone>(ui: &mut Ui, value: &mut T, default: T
 }
 
 /// Render a preview of a widget for drag-and-drop visualization
+#[allow(dead_code)]
 pub fn render_widget_preview(ui: &mut Ui, widget_type: &str, accent_color: egui::Color32) {
     use crate::theme;
     ui.set_max_width(150.0);
@@ -3094,7 +3211,7 @@ impl WidgetNode for WindowWidget {
 
         // Draw drop zone indicator when any payload is hovering
         if ui.rect_contains_pointer(widget_rect) && ui.ctx().dragged_id().is_some() {
-            draw_drop_zone_indicator(ui, widget_rect);
+            draw_labeled_drop_zone(ui, widget_rect, "☐ Window");
         }
 
         if selection.contains(&self.id) {
@@ -3301,7 +3418,7 @@ impl WidgetNode for TabContainerWidget {
 
         // Draw drop zone indicator when any payload is hovering
         if ui.rect_contains_pointer(widget_rect) && ui.ctx().dragged_id().is_some() {
-            draw_drop_zone_indicator(ui, widget_rect);
+            draw_labeled_drop_zone(ui, widget_rect, "⊟ Tab Container");
         }
 
         if selection.contains(&self.id) {
@@ -3489,7 +3606,7 @@ impl WidgetNode for ScrollAreaWidget {
 
         // Draw drop zone indicator when any payload is hovering
         if ui.rect_contains_pointer(widget_rect) && ui.ctx().dragged_id().is_some() {
-            draw_drop_zone_indicator(ui, widget_rect);
+            draw_labeled_drop_zone(ui, widget_rect, "↕ Scroll Area");
         }
 
         if selection.contains(&self.id) {
@@ -3912,7 +4029,7 @@ impl WidgetNode for FreeformLayout {
 
         // Draw drop zone indicator when any payload is hovering
         if ui.rect_contains_pointer(widget_rect) && ui.ctx().dragged_id().is_some() {
-            draw_drop_zone_indicator(ui, widget_rect);
+            draw_labeled_drop_zone(ui, widget_rect, "⊡ Freeform Layout");
         }
 
         if selection.contains(&self.id) {

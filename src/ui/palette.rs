@@ -109,7 +109,7 @@ fn render_widget_category(ui: &mut Ui, category: &str, widgets: &[&str], accent_
             let is_being_dragged = ui.ctx().is_being_dragged(id);
 
             if is_being_dragged {
-                // Show a ghost/preview slightly offset from the cursor
+                // Show a semi-transparent ghost/preview at the cursor
                 let cursor_pos = ui.ctx().pointer_hover_pos().unwrap_or_default();
                 let offset_pos = cursor_pos + egui::vec2(12.0, 12.0);
 
@@ -117,50 +117,62 @@ fn render_widget_category(ui: &mut Ui, category: &str, widgets: &[&str], accent_
                     .order(egui::Order::Tooltip)
                     .fixed_pos(offset_pos)
                     .show(ui.ctx(), |ui| {
+                        // Semi-transparent background so you can see underneath
+                        let bg_color = ui.style().visuals.window_fill.linear_multiply(0.85);
                         egui::Frame::new()
-                            .fill(ui.style().visuals.window_fill.gamma_multiply(0.95))
+                            .fill(bg_color)
                             .stroke(egui::Stroke::new(2.0, accent_color))
                             .corner_radius(CornerRadius::same(6))
-                            .inner_margin(egui::Margin::same(10))
+                            .inner_margin(egui::Margin::same(8))
                             .shadow(egui::Shadow {
-                                offset: [4, 4],
-                                blur: 8,
+                                offset: [2, 2],
+                                blur: 6,
                                 spread: 0,
-                                color: Color32::from_black_alpha(60),
+                                color: Color32::from_black_alpha(40),
                             })
                             .show(ui, |ui| {
-                                // Show the widget name as a header
+                                // Just show the widget name - cleaner look
                                 ui.label(
                                     RichText::new(theme::WidgetLabels::get(widget_type))
-                                        .size(11.0)
+                                        .size(12.0)
                                         .color(accent_color)
                                         .strong(),
                                 );
-                                ui.add_space(4.0);
-                                // Show a preview of what the widget looks like
-                                crate::widgets::render_widget_preview(ui, widget_type, accent_color);
                             });
                     });
             }
 
             // Use DragPayload::NewWidget for palette items
             let payload = DragPayload::NewWidget(widget_type.to_string());
-            let dnd_response = ui.dnd_drag_source(id, payload, |ui| {
-                let response = ui.add(
+
+            // When dragging, show a faded placeholder instead of the full button
+            if is_being_dragged {
+                // Show a ghost/placeholder where the button was
+                ui.add_enabled(false,
                     egui::Button::new(
                         RichText::new(label)
-                            .color(accent_color)
+                            .color(accent_color.linear_multiply(0.3))
                     )
-                    .min_size(egui::vec2(ui.available_width() - 8.0, 28.0)),
+                    .min_size(egui::vec2(ui.available_width() - 8.0, 28.0))
                 );
+            } else {
+                let dnd_response = ui.dnd_drag_source(id, payload, |ui| {
+                    let response = ui.add(
+                        egui::Button::new(
+                            RichText::new(label)
+                                .color(accent_color)
+                        )
+                        .min_size(egui::vec2(ui.available_width() - 8.0, 28.0)),
+                    );
 
-                // Show hint on hover
-                response.on_hover_text("Click to add, or drag to canvas");
-            });
+                    // Show hint on hover
+                    response.on_hover_text("Click to add, or drag to canvas");
+                });
 
-            // Check for click (not drag) to add widget
-            if dnd_response.response.clicked() {
-                clicked_widget = Some(widget_type.to_string());
+                // Check for click (not drag) to add widget
+                if dnd_response.response.clicked() {
+                    clicked_widget = Some(widget_type.to_string());
+                }
             }
 
             ui.add_space(4.0);
