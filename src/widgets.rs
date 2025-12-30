@@ -13,7 +13,8 @@ use uuid::Uuid;
 pub enum DragPayload {
     /// New widget from palette (widget type name)
     NewWidget(String),
-    /// Existing widget being moved (widget ID)
+    /// Existing widget being moved (widget ID) - reserved for future canvas reordering
+    #[allow(dead_code)]
     ExistingWidget(Uuid),
 }
 
@@ -495,10 +496,7 @@ impl WidgetNode for VerticalLayout {
             LayoutAlignment::End => egui::Layout::top_down(egui::Align::RIGHT),
         };
 
-        // Track drop operation: (source, target_index)
-        let mut drop_op: Option<(DragPayload, usize)> = None;
-
-        // Wrap the entire layout in a drop zone
+        // Wrap the entire layout in a drop zone for new widgets from palette
         let frame = egui::Frame::new()
             .inner_margin(egui::Margin::same(self.padding.min(127.0) as i8));
 
@@ -516,111 +514,22 @@ impl WidgetNode for VerticalLayout {
             ui.with_layout(layout, |ui| {
                 ui.spacing_mut().item_spacing.y = self.spacing;
 
-                // Render each child as a drag source
-                for (idx, child) in self.children.iter_mut().enumerate() {
-                    let child_id = child.id();
-                    let child_name = child.name().to_string();
-                    let item_id = egui::Id::new("vl_child").with(self.id).with(child_id);
-                    let payload = DragPayload::ExistingWidget(child_id);
-
-                    // Check if this child is being dragged
-                    let is_being_dragged = ui.ctx().is_being_dragged(item_id);
-
-                    // Show drag preview at cursor when dragging
-                    if is_being_dragged {
-                        if let Some(pos) = ui.ctx().pointer_hover_pos() {
-                            egui::Area::new(egui::Id::new("canvas_drag_preview").with(child_id))
-                                .order(egui::Order::Tooltip)
-                                .fixed_pos(pos + egui::vec2(12.0, 12.0))
-                                .show(ui.ctx(), |ui| {
-                                    let cat_color = crate::theme::widget_category_color(&child_name);
-                                    egui::Frame::new()
-                                        .fill(ui.style().visuals.window_fill.linear_multiply(0.85))
-                                        .stroke(egui::Stroke::new(2.0, cat_color))
-                                        .corner_radius(egui::CornerRadius::same(4))
-                                        .inner_margin(egui::Margin::same(6))
-                                        .show(ui, |ui| {
-                                            ui.label(egui::RichText::new(crate::theme::WidgetLabels::get(&child_name))
-                                                .color(cat_color)
-                                                .strong());
-                                        });
-                                });
-                        }
-                    }
-
-                    // Create drag source for this child
-                    let child_response = ui.dnd_drag_source(item_id, payload, |ui| {
-                        // Dim the widget slightly when being dragged
-                        if is_being_dragged {
-                            ui.disable();
-                        }
-                        child.render_editor(ui, selection);
-                    }).response;
-
-                    // Check for hover during drag - show insertion indicators
-                    if let (Some(pointer), Some(hovered_payload)) = (
-                        ui.input(|i| i.pointer.interact_pos()),
-                        child_response.dnd_hover_payload::<DragPayload>(),
-                    ) {
-                        let rect = child_response.rect;
-                        let stroke = egui::Stroke::new(2.0, DROP_ZONE_COLOR);
-
-                        // Determine if dropping before or after this item
-                        let is_same_widget = matches!(&*hovered_payload, DragPayload::ExistingWidget(id) if *id == child_id);
-
-                        let insert_idx = if is_same_widget {
-                            // Dragging over self - show center line
-                            ui.painter().hline(rect.x_range(), rect.center().y, stroke);
-                            idx
-                        } else if pointer.y < rect.center().y {
-                            // Insert before
-                            ui.painter().hline(rect.x_range(), rect.top() - 1.0, stroke);
-                            idx
-                        } else {
-                            // Insert after
-                            ui.painter().hline(rect.x_range(), rect.bottom() + 1.0, stroke);
-                            idx + 1
-                        };
-
-                        // Check for release
-                        if let Some(released_payload) = child_response.dnd_release_payload::<DragPayload>() {
-                            drop_op = Some(((*released_payload).clone(), insert_idx));
-                        }
-                    }
+                // Render children directly - no drag source wrapping
+                // This allows widgets to handle their own selection
+                // Reordering is done via the hierarchy panel
+                for child in &mut self.children {
+                    child.render_editor(ui, selection);
                 }
             });
         });
 
         let widget_rect = drop_response.response.rect;
 
-        // Handle drop onto empty space (append to end)
+        // Handle drop of new widgets from palette
         if let Some(payload) = dropped_payload {
-            drop_op = Some(((*payload).clone(), self.children.len()));
-        }
-
-        // Process the drop operation
-        if let Some((payload, mut target_idx)) = drop_op {
-            match payload {
-                DragPayload::NewWidget(widget_type) => {
-                    // Insert new widget at target position
-                    if let Some(new_widget) = create_widget_by_name(&widget_type) {
-                        target_idx = target_idx.min(self.children.len());
-                        self.children.insert(target_idx, new_widget);
-                    }
-                }
-                DragPayload::ExistingWidget(widget_id) => {
-                    // Reorder: find source index and move
-                    if let Some(source_idx) = self.children.iter().position(|c| c.id() == widget_id) {
-                        // Adjust target if source is before target
-                        if source_idx < target_idx {
-                            target_idx = target_idx.saturating_sub(1);
-                        }
-                        if source_idx != target_idx {
-                            let widget = self.children.remove(source_idx);
-                            target_idx = target_idx.min(self.children.len());
-                            self.children.insert(target_idx, widget);
-                        }
-                    }
+            if let DragPayload::NewWidget(widget_type) = &*payload {
+                if let Some(new_widget) = create_widget_by_name(widget_type) {
+                    self.children.push(new_widget);
                 }
             }
         }
@@ -762,9 +671,7 @@ impl WidgetNode for HorizontalLayout {
     }
 
     fn render_editor(&mut self, ui: &mut Ui, selection: &mut HashSet<Uuid>) {
-        // Track drop operation: (source, target_index)
-        let mut drop_op: Option<(DragPayload, usize)> = None;
-
+        // Wrap the entire layout in a drop zone for new widgets from palette
         let frame = egui::Frame::NONE;
         let (drop_response, dropped_payload) = ui.dnd_drop_zone::<DragPayload, _>(frame, |ui| {
             ui.set_min_size(egui::vec2(60.0, 30.0)); // Minimum size for empty containers
@@ -772,107 +679,20 @@ impl WidgetNode for HorizontalLayout {
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = self.spacing;
 
-                // Render each child as a drag source
-                for (idx, child) in self.children.iter_mut().enumerate() {
-                    let child_id = child.id();
-                    let child_name = child.name().to_string();
-                    let item_id = egui::Id::new("hl_child").with(self.id).with(child_id);
-                    let payload = DragPayload::ExistingWidget(child_id);
-
-                    // Check if this child is being dragged
-                    let is_being_dragged = ui.ctx().is_being_dragged(item_id);
-
-                    // Show drag preview at cursor when dragging
-                    if is_being_dragged {
-                        if let Some(pos) = ui.ctx().pointer_hover_pos() {
-                            egui::Area::new(egui::Id::new("canvas_drag_preview").with(child_id))
-                                .order(egui::Order::Tooltip)
-                                .fixed_pos(pos + egui::vec2(12.0, 12.0))
-                                .show(ui.ctx(), |ui| {
-                                    let cat_color = crate::theme::widget_category_color(&child_name);
-                                    egui::Frame::new()
-                                        .fill(ui.style().visuals.window_fill.linear_multiply(0.85))
-                                        .stroke(egui::Stroke::new(2.0, cat_color))
-                                        .corner_radius(egui::CornerRadius::same(4))
-                                        .inner_margin(egui::Margin::same(6))
-                                        .show(ui, |ui| {
-                                            ui.label(egui::RichText::new(crate::theme::WidgetLabels::get(&child_name))
-                                                .color(cat_color)
-                                                .strong());
-                                        });
-                                });
-                        }
-                    }
-
-                    // Create drag source for this child
-                    let child_response = ui.dnd_drag_source(item_id, payload, |ui| {
-                        if is_being_dragged {
-                            ui.disable();
-                        }
-                        child.render_editor(ui, selection);
-                    }).response;
-
-                    // Check for hover during drag - show insertion indicators
-                    if let (Some(pointer), Some(hovered_payload)) = (
-                        ui.input(|i| i.pointer.interact_pos()),
-                        child_response.dnd_hover_payload::<DragPayload>(),
-                    ) {
-                        let rect = child_response.rect;
-                        let stroke = egui::Stroke::new(2.0, DROP_ZONE_COLOR);
-
-                        // Determine if dropping before or after this item (horizontal = left/right)
-                        let is_same_widget = matches!(&*hovered_payload, DragPayload::ExistingWidget(id) if *id == child_id);
-
-                        let insert_idx = if is_same_widget {
-                            // Dragging over self - show center line
-                            ui.painter().vline(rect.center().x, rect.y_range(), stroke);
-                            idx
-                        } else if pointer.x < rect.center().x {
-                            // Insert before (left)
-                            ui.painter().vline(rect.left() - 1.0, rect.y_range(), stroke);
-                            idx
-                        } else {
-                            // Insert after (right)
-                            ui.painter().vline(rect.right() + 1.0, rect.y_range(), stroke);
-                            idx + 1
-                        };
-
-                        // Check for release
-                        if let Some(released_payload) = child_response.dnd_release_payload::<DragPayload>() {
-                            drop_op = Some(((*released_payload).clone(), insert_idx));
-                        }
-                    }
+                // Render children directly - no drag source wrapping
+                for child in &mut self.children {
+                    child.render_editor(ui, selection);
                 }
             });
         });
 
         let widget_rect = drop_response.response.rect;
 
-        // Handle drop onto empty space (append to end)
+        // Handle drop of new widgets from palette
         if let Some(payload) = dropped_payload {
-            drop_op = Some(((*payload).clone(), self.children.len()));
-        }
-
-        // Process the drop operation
-        if let Some((payload, mut target_idx)) = drop_op {
-            match payload {
-                DragPayload::NewWidget(widget_type) => {
-                    if let Some(new_widget) = create_widget_by_name(&widget_type) {
-                        target_idx = target_idx.min(self.children.len());
-                        self.children.insert(target_idx, new_widget);
-                    }
-                }
-                DragPayload::ExistingWidget(widget_id) => {
-                    if let Some(source_idx) = self.children.iter().position(|c| c.id() == widget_id) {
-                        if source_idx < target_idx {
-                            target_idx = target_idx.saturating_sub(1);
-                        }
-                        if source_idx != target_idx {
-                            let widget = self.children.remove(source_idx);
-                            target_idx = target_idx.min(self.children.len());
-                            self.children.insert(target_idx, widget);
-                        }
-                    }
+            if let DragPayload::NewWidget(widget_type) = &*payload {
+                if let Some(new_widget) = create_widget_by_name(widget_type) {
+                    self.children.push(new_widget);
                 }
             }
         }
@@ -959,9 +779,7 @@ impl WidgetNode for GridLayout {
     }
 
     fn render_editor(&mut self, ui: &mut Ui, selection: &mut HashSet<Uuid>) {
-        // Track drop operation: (source, target_index)
-        let mut drop_op: Option<(DragPayload, usize)> = None;
-
+        // Wrap the entire layout in a drop zone for new widgets from palette
         let frame = egui::Frame::NONE;
         let (drop_response, dropped_payload) = ui.dnd_drop_zone::<DragPayload, _>(frame, |ui| {
             ui.set_min_size(egui::vec2(60.0, 40.0));
@@ -969,83 +787,17 @@ impl WidgetNode for GridLayout {
             ui.vertical(|ui| {
                 ui.spacing_mut().item_spacing = egui::vec2(self.spacing, self.spacing);
 
-                // Collect child rects and responses for drag handling
                 let total_children = self.children.len();
                 let columns = self.columns;
 
-                // Render children in grid format with drag sources
+                // Render children in grid format - no drag source wrapping
                 for row_start in (0..total_children).step_by(columns) {
                     ui.horizontal(|ui| {
                         ui.spacing_mut().item_spacing.x = self.spacing;
 
                         let row_end = (row_start + columns).min(total_children);
                         for idx in row_start..row_end {
-                            let child = &mut self.children[idx];
-                            let child_id = child.id();
-                            let child_name = child.name().to_string();
-                            let item_id = egui::Id::new("gl_child").with(self.id).with(child_id);
-                            let payload = DragPayload::ExistingWidget(child_id);
-
-                            // Check if this child is being dragged
-                            let is_being_dragged = ui.ctx().is_being_dragged(item_id);
-
-                            // Show drag preview at cursor when dragging
-                            if is_being_dragged {
-                                if let Some(pos) = ui.ctx().pointer_hover_pos() {
-                                    egui::Area::new(egui::Id::new("canvas_drag_preview").with(child_id))
-                                        .order(egui::Order::Tooltip)
-                                        .fixed_pos(pos + egui::vec2(12.0, 12.0))
-                                        .show(ui.ctx(), |ui| {
-                                            let cat_color = crate::theme::widget_category_color(&child_name);
-                                            egui::Frame::new()
-                                                .fill(ui.style().visuals.window_fill.linear_multiply(0.85))
-                                                .stroke(egui::Stroke::new(2.0, cat_color))
-                                                .corner_radius(egui::CornerRadius::same(4))
-                                                .inner_margin(egui::Margin::same(6))
-                                                .show(ui, |ui| {
-                                                    ui.label(egui::RichText::new(crate::theme::WidgetLabels::get(&child_name))
-                                                        .color(cat_color)
-                                                        .strong());
-                                                });
-                                        });
-                                }
-                            }
-
-                            let child_response = ui.dnd_drag_source(item_id, payload, |ui| {
-                                if is_being_dragged {
-                                    ui.disable();
-                                }
-                                child.render_editor(ui, selection);
-                            }).response;
-
-                            // Check for hover during drag
-                            if let (Some(pointer), Some(hovered_payload)) = (
-                                ui.input(|i| i.pointer.interact_pos()),
-                                child_response.dnd_hover_payload::<DragPayload>(),
-                            ) {
-                                let rect = child_response.rect;
-                                let stroke = egui::Stroke::new(2.0, DROP_ZONE_COLOR);
-
-                                let is_same_widget = matches!(&*hovered_payload, DragPayload::ExistingWidget(id) if *id == child_id);
-
-                                // For grid, use combined x/y position for insert point
-                                let insert_idx = if is_same_widget {
-                                    ui.painter().hline(rect.x_range(), rect.center().y, stroke);
-                                    idx
-                                } else if pointer.x < rect.center().x {
-                                    // Insert before (left)
-                                    ui.painter().vline(rect.left() - 1.0, rect.y_range(), stroke);
-                                    idx
-                                } else {
-                                    // Insert after (right)
-                                    ui.painter().vline(rect.right() + 1.0, rect.y_range(), stroke);
-                                    idx + 1
-                                };
-
-                                if let Some(released_payload) = child_response.dnd_release_payload::<DragPayload>() {
-                                    drop_op = Some(((*released_payload).clone(), insert_idx));
-                                }
-                            }
+                            self.children[idx].render_editor(ui, selection);
                         }
                     });
                 }
@@ -1054,31 +806,11 @@ impl WidgetNode for GridLayout {
 
         let widget_rect = drop_response.response.rect;
 
-        // Handle drop onto empty space (append to end)
+        // Handle drop of new widgets from palette
         if let Some(payload) = dropped_payload {
-            drop_op = Some(((*payload).clone(), self.children.len()));
-        }
-
-        // Process the drop operation
-        if let Some((payload, mut target_idx)) = drop_op {
-            match payload {
-                DragPayload::NewWidget(widget_type) => {
-                    if let Some(new_widget) = create_widget_by_name(&widget_type) {
-                        target_idx = target_idx.min(self.children.len());
-                        self.children.insert(target_idx, new_widget);
-                    }
-                }
-                DragPayload::ExistingWidget(widget_id) => {
-                    if let Some(source_idx) = self.children.iter().position(|c| c.id() == widget_id) {
-                        if source_idx < target_idx {
-                            target_idx = target_idx.saturating_sub(1);
-                        }
-                        if source_idx != target_idx {
-                            let widget = self.children.remove(source_idx);
-                            target_idx = target_idx.min(self.children.len());
-                            self.children.insert(target_idx, widget);
-                        }
-                    }
+            if let DragPayload::NewWidget(widget_type) = &*payload {
+                if let Some(new_widget) = create_widget_by_name(widget_type) {
+                    self.children.push(new_widget);
                 }
             }
         }

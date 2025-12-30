@@ -181,20 +181,6 @@ fn draw_hierarchy_node_styled(
                         RichText::new(&display_text).color(text_color).strong(),
                     );
 
-                    // Handle selection
-                    if response.clicked() {
-                        if cmd_held {
-                            if selection.contains(&id) {
-                                selection.remove(&id);
-                            } else {
-                                selection.insert(id);
-                            }
-                        } else {
-                            selection.clear();
-                            selection.insert(id);
-                        }
-                    }
-
                     // Selection indicator
                     if is_selected {
                         let rect = response.rect;
@@ -206,6 +192,21 @@ fn draw_hierarchy_node_styled(
                         );
                     }
                 }).response;
+
+                // Handle selection from the drag_response (outer response)
+                // The inner response.clicked() doesn't work because dnd_drag_source consumes clicks
+                if drag_response.clicked() {
+                    if cmd_held {
+                        if selection.contains(&id) {
+                            selection.remove(&id);
+                        } else {
+                            selection.insert(id);
+                        }
+                    } else {
+                        selection.clear();
+                        selection.insert(id);
+                    }
+                }
 
                 // Check for hover during drag - show insertion indicator
                 // Note: For containers, "Into" is handled by the dedicated drop zone below
@@ -313,24 +314,25 @@ fn draw_hierarchy_node_styled(
 
             // Make the leaf draggable
             let drag_response = ui.dnd_drag_source(drag_id, payload, |ui| {
-                let response = ui.selectable_label(
+                let _ = ui.selectable_label(
                     is_selected,
                     RichText::new(display_text).color(text_color),
                 );
+            }).response;
 
-                if response.clicked() {
-                    if cmd_held {
-                        if selection.contains(&id) {
-                            selection.remove(&id);
-                        } else {
-                            selection.insert(id);
-                        }
+            // Handle selection from the outer drag_response
+            if drag_response.clicked() {
+                if cmd_held {
+                    if selection.contains(&id) {
+                        selection.remove(&id);
                     } else {
-                        selection.clear();
                         selection.insert(id);
                     }
+                } else {
+                    selection.clear();
+                    selection.insert(id);
                 }
-            }).response;
+            }
 
             // Check for hover during drag - show insertion indicator
             if let (Some(pointer), Some(hovered_payload)) = (
