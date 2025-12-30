@@ -112,18 +112,34 @@ fn render_widget_category(ui: &mut Ui, category: &str, widgets: &[&str], accent_
                 // Set the dragged widget type in memory for the canvas to read
                 ui.memory_mut(|mem| mem.data.insert_temp(egui::Id::new("dragged_widget_type"), widget_type.to_string()));
 
-                // Show a ghost/preview at the cursor position
+                // Show a ghost/preview slightly offset from the cursor
+                let cursor_pos = ui.ctx().pointer_hover_pos().unwrap_or_default();
+                let offset_pos = cursor_pos + egui::vec2(12.0, 12.0);
+
                 egui::Area::new(egui::Id::new("drag_preview").with(*widget_type))
                     .order(egui::Order::Tooltip)
-                    .fixed_pos(ui.ctx().pointer_hover_pos().unwrap_or_default())
+                    .fixed_pos(offset_pos)
                     .show(ui.ctx(), |ui| {
                         egui::Frame::new()
-                            .fill(ui.style().visuals.window_fill)
+                            .fill(ui.style().visuals.window_fill.gamma_multiply(0.95))
                             .stroke(egui::Stroke::new(2.0, accent_color))
-                            .corner_radius(CornerRadius::same(4))
-                            .inner_margin(egui::Margin::same(8))
-                            .shadow(egui::Shadow::NONE)
+                            .corner_radius(CornerRadius::same(6))
+                            .inner_margin(egui::Margin::same(10))
+                            .shadow(egui::Shadow {
+                                offset: [4, 4],
+                                blur: 8,
+                                spread: 0,
+                                color: Color32::from_black_alpha(60),
+                            })
                             .show(ui, |ui| {
+                                // Show the widget name as a header
+                                ui.label(
+                                    RichText::new(theme::WidgetLabels::get(widget_type))
+                                        .size(11.0)
+                                        .color(accent_color)
+                                        .strong(),
+                                );
+                                ui.add_space(4.0);
                                 // Show a preview of what the widget looks like
                                 crate::widgets::render_widget_preview(ui, widget_type, accent_color);
                             });

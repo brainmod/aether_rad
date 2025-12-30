@@ -71,12 +71,14 @@ tests/
 
 | Issue | Severity | Description |
 |-------|----------|-------------|
-| **Unused Code** | Low | ~30 compiler warnings for unused functions/fields |
+| *(None critical)* | - | All major issues resolved |
 
 ### Recently Fixed
 
 - **Selection**: Widgets now use inert rendering with reliable click detection
 - **DnD**: Click-to-add fallback ensures widgets can always be added
+- **Unused Code**: All ~30 warnings resolved with `#[allow(dead_code)]` on reserved code
+- **Visual Feedback**: Drop zone indicators and improved drag ghost previews
 - **Reordering**: Ctrl+Up/Down, Move buttons, and drag-to-reorder all work
 
 ### Implemented Widgets (21 total)
@@ -138,8 +140,8 @@ tests/
 
 **Focus:** Stabilize and improve UX
 
-- [ ] **Cleanup:** Remove unused code (~30 warnings)
-- [ ] **Visual Feedback:** Improve DnD ghost previews
+- [x] **Cleanup:** Remove unused code (~30 warnings)
+- [x] **Visual Feedback:** Improve DnD ghost previews with drop zone indicators
 - [ ] **Property Polish:** Add "Reset to Default" buttons
 - [ ] **Error Handling:** Replace panics with graceful fallbacks
 - [ ] **Validation:** Enhance `CodeValidator` feedback

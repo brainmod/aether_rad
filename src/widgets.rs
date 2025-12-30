@@ -39,6 +39,7 @@ pub fn create_widget_by_name(name: &str) -> Option<Box<dyn WidgetNode>> {
 // === Gizmo Helper Functions ===
 
 const GIZMO_COLOR: egui::Color32 = egui::Color32::from_rgb(255, 165, 0);
+const DROP_ZONE_COLOR: egui::Color32 = egui::Color32::from_rgb(100, 200, 255);
 const HANDLE_SIZE: f32 = 8.0;
 
 /// Draw a selection gizmo (orange outline) around a widget
@@ -49,6 +50,21 @@ fn draw_gizmo(ui: &egui::Ui, rect: egui::Rect) {
         egui::Stroke::new(2.0, GIZMO_COLOR),
         egui::StrokeKind::Outside,
     );
+}
+
+/// Draw a drop zone indicator (dashed blue border) when dragging over a container
+fn draw_drop_zone_indicator(ui: &egui::Ui, rect: egui::Rect) {
+    // Draw a glowing border effect
+    let expanded = rect.expand(2.0);
+    ui.painter().rect_stroke(
+        expanded,
+        4.0,
+        egui::Stroke::new(2.0, DROP_ZONE_COLOR),
+        egui::StrokeKind::Outside,
+    );
+    // Draw inner glow
+    let fill_color = egui::Color32::from_rgba_unmultiplied(100, 200, 255, 20);
+    ui.painter().rect_filled(rect, 4.0, fill_color);
 }
 
 /// Draw resize handles at the corners and edges of a rect
@@ -448,6 +464,12 @@ impl WidgetNode for VerticalLayout {
         let border_clicked = create_container_selection_overlay(ui, widget_rect, self.padding.max(8.0), self.id);
         handle_selection(ui, self.id, border_clicked, selection);
 
+        // Draw drop zone indicator when dragging over
+        let is_dragging = ui.memory(|mem| mem.data.get_temp::<String>(egui::Id::new("dragged_widget_type")).is_some());
+        if is_dragging && ui.rect_contains_pointer(widget_rect) {
+            draw_drop_zone_indicator(ui, widget_rect);
+        }
+
         // Gizmo (Outline) if selected
         if selection.contains(&self.id) {
             draw_gizmo(ui, widget_rect);
@@ -614,6 +636,12 @@ impl WidgetNode for HorizontalLayout {
         let border_clicked = create_container_selection_overlay(ui, widget_rect, 8.0, self.id);
         handle_selection(ui, self.id, border_clicked, selection);
 
+        // Draw drop zone indicator when dragging over
+        let is_dragging = ui.memory(|mem| mem.data.get_temp::<String>(egui::Id::new("dragged_widget_type")).is_some());
+        if is_dragging && ui.rect_contains_pointer(widget_rect) {
+            draw_drop_zone_indicator(ui, widget_rect);
+        }
+
         if selection.contains(&self.id) {
             draw_gizmo(ui, widget_rect);
         }
@@ -734,6 +762,12 @@ impl WidgetNode for GridLayout {
         let widget_rect = response.response.rect;
         let border_clicked = create_container_selection_overlay(ui, widget_rect, 8.0, self.id);
         handle_selection(ui, self.id, border_clicked, selection);
+
+        // Draw drop zone indicator when dragging over
+        let is_dragging = ui.memory(|mem| mem.data.get_temp::<String>(egui::Id::new("dragged_widget_type")).is_some());
+        if is_dragging && ui.rect_contains_pointer(widget_rect) {
+            draw_drop_zone_indicator(ui, widget_rect);
+        }
 
         if selection.contains(&self.id) {
             draw_gizmo(ui, widget_rect);
@@ -2849,6 +2883,12 @@ impl WidgetNode for WindowWidget {
         let border_clicked = create_container_selection_overlay(ui, widget_rect, 8.0, self.id);
         handle_selection(ui, self.id, border_clicked, selection);
 
+        // Draw drop zone indicator when dragging over
+        let is_dragging = ui.memory(|mem| mem.data.get_temp::<String>(egui::Id::new("dragged_widget_type")).is_some());
+        if is_dragging && ui.rect_contains_pointer(widget_rect) {
+            draw_drop_zone_indicator(ui, widget_rect);
+        }
+
         if selection.contains(&self.id) {
             draw_gizmo(ui, widget_rect);
         }
@@ -3043,6 +3083,12 @@ impl WidgetNode for TabContainerWidget {
         let border_clicked = create_container_selection_overlay(ui, widget_rect, 8.0, self.id);
         handle_selection(ui, self.id, border_clicked, selection);
 
+        // Draw drop zone indicator when dragging over
+        let is_dragging = ui.memory(|mem| mem.data.get_temp::<String>(egui::Id::new("dragged_widget_type")).is_some());
+        if is_dragging && ui.rect_contains_pointer(widget_rect) {
+            draw_drop_zone_indicator(ui, widget_rect);
+        }
+
         if selection.contains(&self.id) {
             draw_gizmo(ui, widget_rect);
         }
@@ -3219,6 +3265,12 @@ impl WidgetNode for ScrollAreaWidget {
         let widget_rect = response;
         let border_clicked = create_container_selection_overlay(ui, widget_rect, 8.0, self.id);
         handle_selection(ui, self.id, border_clicked, selection);
+
+        // Draw drop zone indicator when dragging over
+        let is_dragging = ui.memory(|mem| mem.data.get_temp::<String>(egui::Id::new("dragged_widget_type")).is_some());
+        if is_dragging && ui.rect_contains_pointer(widget_rect) {
+            draw_drop_zone_indicator(ui, widget_rect);
+        }
 
         if selection.contains(&self.id) {
             draw_gizmo(ui, widget_rect);
@@ -3637,6 +3689,12 @@ impl WidgetNode for FreeformLayout {
         let widget_rect = response.rect;
         let border_clicked = create_container_selection_overlay(ui, widget_rect, 10.0, self.id);
         handle_selection(ui, self.id, border_clicked, selection);
+
+        // Draw drop zone indicator when dragging over
+        let is_dragging = ui.memory(|mem| mem.data.get_temp::<String>(egui::Id::new("dragged_widget_type")).is_some());
+        if is_dragging && ui.rect_contains_pointer(widget_rect) {
+            draw_drop_zone_indicator(ui, widget_rect);
+        }
 
         if selection.contains(&self.id) {
             draw_gizmo(ui, widget_rect);
