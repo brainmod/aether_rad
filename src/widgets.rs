@@ -2194,6 +2194,7 @@ impl WidgetNode for ComboBoxWidget {
         ui.horizontal(|ui| {
             ui.label("Label:");
             ui.text_edit_singleline(&mut self.label);
+            reset_button(ui, &mut self.label, "Select...".to_string());
         });
 
         ui.separator();
@@ -2704,6 +2705,7 @@ impl WidgetNode for SpinnerWidget {
         ui.horizontal(|ui| {
             ui.label("Size:");
             ui.add(egui::DragValue::new(&mut self.size).speed(1.0).range(10.0..=100.0));
+            reset_button(ui, &mut self.size, 20.0);
         });
         ui.label(format!("ID: {}", self.id));
     }
@@ -2767,10 +2769,12 @@ impl WidgetNode for HyperlinkWidget {
         ui.horizontal(|ui| {
             ui.label("Text:");
             ui.text_edit_singleline(&mut self.text);
+            reset_button(ui, &mut self.text, "Click here".to_string());
         });
         ui.horizontal(|ui| {
             ui.label("URL:");
             ui.text_edit_singleline(&mut self.url);
+            reset_button(ui, &mut self.url, "https://example.com".to_string());
         });
         ui.label(format!("ID: {}", self.id));
     }
@@ -2903,6 +2907,7 @@ impl WidgetNode for WindowWidget {
         ui.horizontal(|ui| {
             ui.label("Title:");
             ui.text_edit_singleline(&mut self.title);
+            reset_button(ui, &mut self.title, "Window".to_string());
         });
 
         ui.separator();
@@ -2918,6 +2923,7 @@ impl WidgetNode for WindowWidget {
         ui.horizontal(|ui| {
             ui.label("Default Width:");
             ui.add(egui::DragValue::new(&mut self.default_width).speed(1.0).range(100.0..=1000.0));
+            reset_button(ui, &mut self.default_width, 300.0);
         });
 
         ui.horizontal(|ui| {
@@ -3752,11 +3758,13 @@ impl WidgetNode for FreeformLayout {
         ui.horizontal(|ui| {
             ui.label("Width:");
             ui.add(egui::DragValue::new(&mut self.width).speed(1.0).range(100.0..=2000.0));
+            reset_button(ui, &mut self.width, 400.0);
         });
 
         ui.horizontal(|ui| {
             ui.label("Height:");
             ui.add(egui::DragValue::new(&mut self.height).speed(1.0).range(100.0..=2000.0));
+            reset_button(ui, &mut self.height, 300.0);
         });
 
         ui.separator();
@@ -3768,6 +3776,7 @@ impl WidgetNode for FreeformLayout {
         ui.horizontal(|ui| {
             ui.label("Grid Size:");
             ui.add(egui::DragValue::new(&mut self.grid_size).speed(1.0).range(5.0..=50.0));
+            reset_button(ui, &mut self.grid_size, 10.0);
         });
 
         ui.separator();
@@ -3931,7 +3940,8 @@ impl WidgetNode for TableWidget {
         ui.checkbox(&mut self.resizable, "Resizable Columns");
         ui.horizontal(|ui| {
             ui.label("Preview Rows:");
-             ui.add(egui::DragValue::new(&mut self.row_count).range(0..=100));
+            ui.add(egui::DragValue::new(&mut self.row_count).range(0..=100));
+            reset_button(ui, &mut self.row_count, 5);
         });
         
         ui.separator();
@@ -4133,11 +4143,13 @@ impl WidgetNode for PlotWidget {
         ui.horizontal(|ui| {
             ui.label("Title:");
             ui.text_edit_singleline(&mut self.title);
+            reset_button(ui, &mut self.title, "Plot".to_string());
         });
 
         ui.horizontal(|ui| {
             ui.label("Height:");
             ui.add(egui::DragValue::new(&mut self.height).speed(1.0).range(50.0..=1000.0));
+            reset_button(ui, &mut self.height, 200.0);
         });
 
         ui.checkbox(&mut self.show_x_axis, "Show X Axis");

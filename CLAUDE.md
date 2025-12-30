@@ -80,6 +80,7 @@ tests/
 - **Unused Code**: All ~30 warnings resolved with `#[allow(dead_code)]` on reserved code
 - **Visual Feedback**: Drop zone indicators and improved drag ghost previews
 - **Reordering**: Ctrl+Up/Down, Move buttons, and drag-to-reorder all work
+- **Property Polish**: Added reset buttons to numeric and text properties
 
 ### Implemented Widgets (21 total)
 
@@ -142,7 +143,7 @@ tests/
 
 - [x] **Cleanup:** Remove unused code (~30 warnings)
 - [x] **Visual Feedback:** Improve DnD ghost previews with drop zone indicators
-- [ ] **Property Polish:** Add "Reset to Default" buttons
+- [x] **Property Polish:** Add "Reset to Default" buttons
 - [ ] **Error Handling:** Replace panics with graceful fallbacks
 - [ ] **Validation:** Enhance `CodeValidator` feedback
 
