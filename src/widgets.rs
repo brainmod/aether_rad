@@ -2493,8 +2493,8 @@ impl WidgetNode for ImageWidget {
                     }
                 }
             }
-        } else {
-            ui.label(format!("Using asset: {}", self.asset_name.as_ref().unwrap()));
+        } else if let Some(asset_name) = &self.asset_name {
+            ui.label(format!("Using asset: {}", asset_name));
         }
 
         ui.separator();
