@@ -5,8 +5,53 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use uuid::Uuid;
 
-// ... existing imports
-// Ensure you import ButtonWidget and the necessary macros
+// === Drag and Drop Payload Types ===
+
+/// Payload for drag-and-drop operations
+/// Can represent either a new widget from palette or an existing widget being moved
+#[derive(Clone, Debug)]
+pub enum DragPayload {
+    /// New widget from palette (widget type name)
+    NewWidget(String),
+    /// Existing widget being moved (widget ID)
+    ExistingWidget(Uuid),
+}
+
+/// Represents where in a container the drop should occur
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[allow(dead_code)]
+pub enum DropPosition {
+    /// Insert at this index
+    At(usize),
+    /// Append to end
+    End,
+}
+
+/// Draw an insertion indicator line at a position
+#[allow(dead_code)]
+fn draw_insertion_indicator(ui: &egui::Ui, rect: egui::Rect, position: InsertPosition) {
+    let stroke = egui::Stroke::new(2.0, DROP_ZONE_COLOR);
+    match position {
+        InsertPosition::Before => {
+            ui.painter().hline(rect.x_range(), rect.top(), stroke);
+        }
+        InsertPosition::After => {
+            ui.painter().hline(rect.x_range(), rect.bottom(), stroke);
+        }
+        InsertPosition::Into => {
+            // For containers, draw a full border
+            ui.painter().rect_stroke(rect.expand(2.0), 4.0, stroke, egui::StrokeKind::Outside);
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[allow(dead_code)]
+enum InsertPosition {
+    Before,
+    After,
+    Into,
+}
 
 /// Create a widget by its display name
 pub fn create_widget_by_name(name: &str) -> Option<Box<dyn WidgetNode>> {
@@ -422,66 +467,118 @@ impl WidgetNode for VerticalLayout {
             LayoutAlignment::End => egui::Layout::top_down(egui::Align::RIGHT),
         };
 
-        // Wrap the entire layout in a drop zone so you can drop anywhere on it
-        let (response, payload_option) = ui.dnd_drop_zone::<String, _>(egui::Frame::NONE, |ui| {
-            egui::Frame::new()
-                .inner_margin(egui::Margin::same(self.padding.min(127.0) as i8))
-                .show(ui, |ui| {
-                    // Apply size constraints
-                    if let Some(min_w) = self.min_width {
-                        ui.set_min_width(min_w);
-                    }
-                    if let Some(max_w) = self.max_width {
-                        ui.set_max_width(max_w);
-                    }
+        // Track drop operation: (source, target_index)
+        let mut drop_op: Option<(DragPayload, usize)> = None;
 
-                    ui.with_layout(layout, |ui| {
-                        ui.spacing_mut().item_spacing.y = self.spacing;
-                        for child in &mut self.children {
-                            child.render_editor(ui, selection);
-                        }
+        // Wrap the entire layout in a drop zone
+        let frame = egui::Frame::new()
+            .inner_margin(egui::Margin::same(self.padding.min(127.0) as i8));
 
-                        // Render ghost preview if dragging
-                        if let Some(dragged_type) = ui.memory(|mem| mem.data.get_temp::<String>(egui::Id::new("dragged_widget_type"))) {
-                            // Only show if hovering this layout (heuristic: if pointer is inside min_rect)
-                            // Note: dnd_drop_zone expands, so min_rect covers the area.
-                            // We use a simplified check here since dnd_drop_zone doesn't expose hover state during closure.
-                            if ui.rect_contains_pointer(ui.min_rect()) {
-                                ui.add_space(self.spacing);
-                                ui.vertical(|ui| {
-                                    ui.disable(); // Make it look like a ghost
-                                    ui.ctx().set_cursor_icon(egui::CursorIcon::Copy); // Indicate copy/add
-                                    render_widget_preview(ui, &dragged_type, egui::Color32::WHITE);
-                                });
-                            }
+        let (drop_response, dropped_payload) = ui.dnd_drop_zone::<DragPayload, _>(frame, |ui| {
+            ui.set_min_size(egui::vec2(60.0, 40.0)); // Minimum size for empty containers
+
+            // Apply size constraints
+            if let Some(min_w) = self.min_width {
+                ui.set_min_width(min_w);
+            }
+            if let Some(max_w) = self.max_width {
+                ui.set_max_width(max_w);
+            }
+
+            ui.with_layout(layout, |ui| {
+                ui.spacing_mut().item_spacing.y = self.spacing;
+
+                // Render each child as a drag source
+                for (idx, child) in self.children.iter_mut().enumerate() {
+                    let child_id = child.id();
+                    let item_id = egui::Id::new("vl_child").with(self.id).with(child_id);
+                    let payload = DragPayload::ExistingWidget(child_id);
+
+                    // Create drag source for this child
+                    let child_response = ui.dnd_drag_source(item_id, payload, |ui| {
+                        child.render_editor(ui, selection);
+                    }).response;
+
+                    // Check for hover during drag - show insertion indicators
+                    if let (Some(pointer), Some(hovered_payload)) = (
+                        ui.input(|i| i.pointer.interact_pos()),
+                        child_response.dnd_hover_payload::<DragPayload>(),
+                    ) {
+                        let rect = child_response.rect;
+                        let stroke = egui::Stroke::new(2.0, DROP_ZONE_COLOR);
+
+                        // Determine if dropping before or after this item
+                        let is_same_widget = matches!(&*hovered_payload, DragPayload::ExistingWidget(id) if *id == child_id);
+
+                        let insert_idx = if is_same_widget {
+                            // Dragging over self - show center line
+                            ui.painter().hline(rect.x_range(), rect.center().y, stroke);
+                            idx
+                        } else if pointer.y < rect.center().y {
+                            // Insert before
+                            ui.painter().hline(rect.x_range(), rect.top() - 1.0, stroke);
+                            idx
+                        } else {
+                            // Insert after
+                            ui.painter().hline(rect.x_range(), rect.bottom() + 1.0, stroke);
+                            idx + 1
+                        };
+
+                        // Check for release
+                        if let Some(released_payload) = child_response.dnd_release_payload::<DragPayload>() {
+                            drop_op = Some(((*released_payload).clone(), insert_idx));
                         }
-                    });
-                }).response
+                    }
+                }
+            });
         });
 
-        // Handle container selection only via border (not content area where children are)
-        let widget_rect = response.response.rect;
+        let widget_rect = drop_response.response.rect;
+
+        // Handle drop onto empty space (append to end)
+        if let Some(payload) = dropped_payload {
+            drop_op = Some(((*payload).clone(), self.children.len()));
+        }
+
+        // Process the drop operation
+        if let Some((payload, mut target_idx)) = drop_op {
+            match payload {
+                DragPayload::NewWidget(widget_type) => {
+                    // Insert new widget at target position
+                    if let Some(new_widget) = create_widget_by_name(&widget_type) {
+                        target_idx = target_idx.min(self.children.len());
+                        self.children.insert(target_idx, new_widget);
+                    }
+                }
+                DragPayload::ExistingWidget(widget_id) => {
+                    // Reorder: find source index and move
+                    if let Some(source_idx) = self.children.iter().position(|c| c.id() == widget_id) {
+                        // Adjust target if source is before target
+                        if source_idx < target_idx {
+                            target_idx = target_idx.saturating_sub(1);
+                        }
+                        if source_idx != target_idx {
+                            let widget = self.children.remove(source_idx);
+                            target_idx = target_idx.min(self.children.len());
+                            self.children.insert(target_idx, widget);
+                        }
+                    }
+                }
+            }
+        }
+
+        // Handle container selection via border
         let border_clicked = create_container_selection_overlay(ui, widget_rect, self.padding.max(8.0), self.id);
         handle_selection(ui, self.id, border_clicked, selection);
 
-        // Draw drop zone indicator when dragging over
-        let is_dragging = ui.memory(|mem| mem.data.get_temp::<String>(egui::Id::new("dragged_widget_type")).is_some());
-        if is_dragging && ui.rect_contains_pointer(widget_rect) {
+        // Draw drop zone indicator when any payload is hovering
+        if drop_response.response.contains_pointer() && ui.ctx().dragged_id().is_some() {
             draw_drop_zone_indicator(ui, widget_rect);
         }
 
         // Gizmo (Outline) if selected
         if selection.contains(&self.id) {
             draw_gizmo(ui, widget_rect);
-        }
-
-        // Handle Drop
-        if let Some(payload) = payload_option {
-            if ui.input(|i| i.pointer.any_released()) {
-                if let Some(new_widget) = create_widget_by_name(&payload) {
-                    self.children.push(new_widget);
-                }
-            }
         }
     }
 
@@ -607,51 +704,103 @@ impl WidgetNode for HorizontalLayout {
     }
 
     fn render_editor(&mut self, ui: &mut Ui, selection: &mut HashSet<Uuid>) {
-        let (response, payload_option) = ui.dnd_drop_zone::<String, _>(egui::Frame::NONE, |ui| {
+        // Track drop operation: (source, target_index)
+        let mut drop_op: Option<(DragPayload, usize)> = None;
+
+        let frame = egui::Frame::NONE;
+        let (drop_response, dropped_payload) = ui.dnd_drop_zone::<DragPayload, _>(frame, |ui| {
+            ui.set_min_size(egui::vec2(60.0, 30.0)); // Minimum size for empty containers
+
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = self.spacing;
-                for child in &mut self.children {
-                    child.render_editor(ui, selection);
-                }
 
-                // Render ghost preview if dragging
-                if let Some(dragged_type) = ui.memory(|mem| mem.data.get_temp::<String>(egui::Id::new("dragged_widget_type"))) {
-                    if ui.rect_contains_pointer(ui.min_rect()) {
-                        ui.add_space(self.spacing);
-                        ui.vertical(|ui| { // Wrap in vertical to keep height consistent or horizontal?
-                            // Horizontal layout adds items horizontally.
-                            // ui.vertical inside horizontal works but might look odd if it expands height.
-                            // But render_widget_preview typically renders a block.
-                            ui.disable();
-                            ui.ctx().set_cursor_icon(egui::CursorIcon::Copy);
-                            render_widget_preview(ui, &dragged_type, egui::Color32::WHITE);
-                        });
+                // Render each child as a drag source
+                for (idx, child) in self.children.iter_mut().enumerate() {
+                    let child_id = child.id();
+                    let item_id = egui::Id::new("hl_child").with(self.id).with(child_id);
+                    let payload = DragPayload::ExistingWidget(child_id);
+
+                    // Create drag source for this child
+                    let child_response = ui.dnd_drag_source(item_id, payload, |ui| {
+                        child.render_editor(ui, selection);
+                    }).response;
+
+                    // Check for hover during drag - show insertion indicators
+                    if let (Some(pointer), Some(hovered_payload)) = (
+                        ui.input(|i| i.pointer.interact_pos()),
+                        child_response.dnd_hover_payload::<DragPayload>(),
+                    ) {
+                        let rect = child_response.rect;
+                        let stroke = egui::Stroke::new(2.0, DROP_ZONE_COLOR);
+
+                        // Determine if dropping before or after this item (horizontal = left/right)
+                        let is_same_widget = matches!(&*hovered_payload, DragPayload::ExistingWidget(id) if *id == child_id);
+
+                        let insert_idx = if is_same_widget {
+                            // Dragging over self - show center line
+                            ui.painter().vline(rect.center().x, rect.y_range(), stroke);
+                            idx
+                        } else if pointer.x < rect.center().x {
+                            // Insert before (left)
+                            ui.painter().vline(rect.left() - 1.0, rect.y_range(), stroke);
+                            idx
+                        } else {
+                            // Insert after (right)
+                            ui.painter().vline(rect.right() + 1.0, rect.y_range(), stroke);
+                            idx + 1
+                        };
+
+                        // Check for release
+                        if let Some(released_payload) = child_response.dnd_release_payload::<DragPayload>() {
+                            drop_op = Some(((*released_payload).clone(), insert_idx));
+                        }
                     }
                 }
-            }).response
+            });
         });
 
-        // Handle container selection only via border (not content area where children are)
-        let widget_rect = response.response.rect;
+        let widget_rect = drop_response.response.rect;
+
+        // Handle drop onto empty space (append to end)
+        if let Some(payload) = dropped_payload {
+            drop_op = Some(((*payload).clone(), self.children.len()));
+        }
+
+        // Process the drop operation
+        if let Some((payload, mut target_idx)) = drop_op {
+            match payload {
+                DragPayload::NewWidget(widget_type) => {
+                    if let Some(new_widget) = create_widget_by_name(&widget_type) {
+                        target_idx = target_idx.min(self.children.len());
+                        self.children.insert(target_idx, new_widget);
+                    }
+                }
+                DragPayload::ExistingWidget(widget_id) => {
+                    if let Some(source_idx) = self.children.iter().position(|c| c.id() == widget_id) {
+                        if source_idx < target_idx {
+                            target_idx = target_idx.saturating_sub(1);
+                        }
+                        if source_idx != target_idx {
+                            let widget = self.children.remove(source_idx);
+                            target_idx = target_idx.min(self.children.len());
+                            self.children.insert(target_idx, widget);
+                        }
+                    }
+                }
+            }
+        }
+
+        // Handle container selection via border
         let border_clicked = create_container_selection_overlay(ui, widget_rect, 8.0, self.id);
         handle_selection(ui, self.id, border_clicked, selection);
 
-        // Draw drop zone indicator when dragging over
-        let is_dragging = ui.memory(|mem| mem.data.get_temp::<String>(egui::Id::new("dragged_widget_type")).is_some());
-        if is_dragging && ui.rect_contains_pointer(widget_rect) {
+        // Draw drop zone indicator when any payload is hovering
+        if drop_response.response.contains_pointer() && ui.ctx().dragged_id().is_some() {
             draw_drop_zone_indicator(ui, widget_rect);
         }
 
         if selection.contains(&self.id) {
             draw_gizmo(ui, widget_rect);
-        }
-
-        if let Some(payload) = payload_option {
-            if ui.input(|i| i.pointer.any_released()) {
-                if let Some(new_widget) = create_widget_by_name(&payload) {
-                    self.children.push(new_widget);
-                }
-            }
         }
     }
 
@@ -723,62 +872,112 @@ impl WidgetNode for GridLayout {
     }
 
     fn render_editor(&mut self, ui: &mut Ui, selection: &mut HashSet<Uuid>) {
-        let (response, payload_option) = ui.dnd_drop_zone::<String, _>(egui::Frame::NONE, |ui| {
+        // Track drop operation: (source, target_index)
+        let mut drop_op: Option<(DragPayload, usize)> = None;
+
+        let frame = egui::Frame::NONE;
+        let (drop_response, dropped_payload) = ui.dnd_drop_zone::<DragPayload, _>(frame, |ui| {
+            ui.set_min_size(egui::vec2(60.0, 40.0));
+
             ui.vertical(|ui| {
                 ui.spacing_mut().item_spacing = egui::vec2(self.spacing, self.spacing);
 
-                // Render children in grid format
-                let mut row_children = Vec::new();
+                // Collect child rects and responses for drag handling
                 let total_children = self.children.len();
-                for (idx, child) in self.children.iter_mut().enumerate() {
-                    row_children.push(child);
+                let columns = self.columns;
 
-                    // When we reach the column count or the last child, render the row
-                    if (idx + 1) % self.columns == 0 || idx == total_children - 1 {
-                        ui.horizontal(|ui| {
-                            ui.spacing_mut().item_spacing.x = self.spacing;
-                            for child in row_children.drain(..) {
+                // Render children in grid format with drag sources
+                for row_start in (0..total_children).step_by(columns) {
+                    ui.horizontal(|ui| {
+                        ui.spacing_mut().item_spacing.x = self.spacing;
+
+                        let row_end = (row_start + columns).min(total_children);
+                        for idx in row_start..row_end {
+                            let child = &mut self.children[idx];
+                            let child_id = child.id();
+                            let item_id = egui::Id::new("gl_child").with(self.id).with(child_id);
+                            let payload = DragPayload::ExistingWidget(child_id);
+
+                            let child_response = ui.dnd_drag_source(item_id, payload, |ui| {
                                 child.render_editor(ui, selection);
-                            }
-                        });
-                    }
-                }
+                            }).response;
 
-                // Render ghost preview if dragging
-                if let Some(dragged_type) = ui.memory(|mem| mem.data.get_temp::<String>(egui::Id::new("dragged_widget_type"))) {
-                    if ui.rect_contains_pointer(ui.min_rect()) {
-                        // For grid, just append at the bottom for now
-                        ui.horizontal(|ui| {
-                            ui.disable();
-                            ui.ctx().set_cursor_icon(egui::CursorIcon::Copy);
-                            render_widget_preview(ui, &dragged_type, egui::Color32::WHITE);
-                        });
-                    }
+                            // Check for hover during drag
+                            if let (Some(pointer), Some(hovered_payload)) = (
+                                ui.input(|i| i.pointer.interact_pos()),
+                                child_response.dnd_hover_payload::<DragPayload>(),
+                            ) {
+                                let rect = child_response.rect;
+                                let stroke = egui::Stroke::new(2.0, DROP_ZONE_COLOR);
+
+                                let is_same_widget = matches!(&*hovered_payload, DragPayload::ExistingWidget(id) if *id == child_id);
+
+                                // For grid, use combined x/y position for insert point
+                                let insert_idx = if is_same_widget {
+                                    ui.painter().hline(rect.x_range(), rect.center().y, stroke);
+                                    idx
+                                } else if pointer.x < rect.center().x {
+                                    // Insert before (left)
+                                    ui.painter().vline(rect.left() - 1.0, rect.y_range(), stroke);
+                                    idx
+                                } else {
+                                    // Insert after (right)
+                                    ui.painter().vline(rect.right() + 1.0, rect.y_range(), stroke);
+                                    idx + 1
+                                };
+
+                                if let Some(released_payload) = child_response.dnd_release_payload::<DragPayload>() {
+                                    drop_op = Some(((*released_payload).clone(), insert_idx));
+                                }
+                            }
+                        }
+                    });
                 }
-            }).response
+            });
         });
 
-        // Handle container selection only via border (not content area where children are)
-        let widget_rect = response.response.rect;
+        let widget_rect = drop_response.response.rect;
+
+        // Handle drop onto empty space (append to end)
+        if let Some(payload) = dropped_payload {
+            drop_op = Some(((*payload).clone(), self.children.len()));
+        }
+
+        // Process the drop operation
+        if let Some((payload, mut target_idx)) = drop_op {
+            match payload {
+                DragPayload::NewWidget(widget_type) => {
+                    if let Some(new_widget) = create_widget_by_name(&widget_type) {
+                        target_idx = target_idx.min(self.children.len());
+                        self.children.insert(target_idx, new_widget);
+                    }
+                }
+                DragPayload::ExistingWidget(widget_id) => {
+                    if let Some(source_idx) = self.children.iter().position(|c| c.id() == widget_id) {
+                        if source_idx < target_idx {
+                            target_idx = target_idx.saturating_sub(1);
+                        }
+                        if source_idx != target_idx {
+                            let widget = self.children.remove(source_idx);
+                            target_idx = target_idx.min(self.children.len());
+                            self.children.insert(target_idx, widget);
+                        }
+                    }
+                }
+            }
+        }
+
+        // Handle container selection via border
         let border_clicked = create_container_selection_overlay(ui, widget_rect, 8.0, self.id);
         handle_selection(ui, self.id, border_clicked, selection);
 
-        // Draw drop zone indicator when dragging over
-        let is_dragging = ui.memory(|mem| mem.data.get_temp::<String>(egui::Id::new("dragged_widget_type")).is_some());
-        if is_dragging && ui.rect_contains_pointer(widget_rect) {
+        // Draw drop zone indicator when any payload is hovering
+        if drop_response.response.contains_pointer() && ui.ctx().dragged_id().is_some() {
             draw_drop_zone_indicator(ui, widget_rect);
         }
 
         if selection.contains(&self.id) {
             draw_gizmo(ui, widget_rect);
-        }
-
-        if let Some(payload) = payload_option {
-            if ui.input(|i| i.pointer.any_released()) {
-                if let Some(new_widget) = create_widget_by_name(&payload) {
-                    self.children.push(new_widget);
-                }
-            }
         }
     }
 
@@ -2869,14 +3068,20 @@ impl WidgetNode for WindowWidget {
 
             // Drop zone for adding widgets
             let (_response, payload_option) =
-                ui.dnd_drop_zone::<String, _>(egui::Frame::NONE, |ui| {
-                    ui.label("Drag widget here to add...");
+                ui.dnd_drop_zone::<DragPayload, _>(egui::Frame::NONE, |ui| {
+                    ui.set_min_size(egui::vec2(40.0, 20.0));
+                    ui.label("Drop widgets here...");
                 });
 
             if let Some(payload) = payload_option {
-                if ui.input(|i| i.pointer.any_released()) {
-                    if let Some(new_widget) = create_widget_by_name(&payload) {
-                        self.children.push(new_widget);
+                match &*payload {
+                    DragPayload::NewWidget(widget_type) => {
+                        if let Some(new_widget) = create_widget_by_name(widget_type) {
+                            self.children.push(new_widget);
+                        }
+                    }
+                    DragPayload::ExistingWidget(_) => {
+                        // Could handle moving widgets into this container
                     }
                 }
             }
@@ -2887,9 +3092,8 @@ impl WidgetNode for WindowWidget {
         let border_clicked = create_container_selection_overlay(ui, widget_rect, 8.0, self.id);
         handle_selection(ui, self.id, border_clicked, selection);
 
-        // Draw drop zone indicator when dragging over
-        let is_dragging = ui.memory(|mem| mem.data.get_temp::<String>(egui::Id::new("dragged_widget_type")).is_some());
-        if is_dragging && ui.rect_contains_pointer(widget_rect) {
+        // Draw drop zone indicator when any payload is hovering
+        if ui.rect_contains_pointer(widget_rect) && ui.ctx().dragged_id().is_some() {
             draw_drop_zone_indicator(ui, widget_rect);
         }
 
@@ -3070,14 +3274,20 @@ impl WidgetNode for TabContainerWidget {
 
                 // Drop zone for adding widgets
                 let (_response, payload_option) =
-                    ui.dnd_drop_zone::<String, _>(egui::Frame::NONE, |ui| {
-                        ui.label("Drag widget here to add...");
+                    ui.dnd_drop_zone::<DragPayload, _>(egui::Frame::NONE, |ui| {
+                        ui.set_min_size(egui::vec2(40.0, 20.0));
+                        ui.label("Drop widgets here...");
                     });
 
                 if let Some(payload) = payload_option {
-                    if ui.input(|i| i.pointer.any_released()) {
-                        if let Some(new_widget) = create_widget_by_name(&payload) {
-                            tab.children.push(new_widget);
+                    match &*payload {
+                        DragPayload::NewWidget(widget_type) => {
+                            if let Some(new_widget) = create_widget_by_name(widget_type) {
+                                tab.children.push(new_widget);
+                            }
+                        }
+                        DragPayload::ExistingWidget(_) => {
+                            // Could handle moving widgets into this tab
                         }
                     }
                 }
@@ -3089,9 +3299,8 @@ impl WidgetNode for TabContainerWidget {
         let border_clicked = create_container_selection_overlay(ui, widget_rect, 8.0, self.id);
         handle_selection(ui, self.id, border_clicked, selection);
 
-        // Draw drop zone indicator when dragging over
-        let is_dragging = ui.memory(|mem| mem.data.get_temp::<String>(egui::Id::new("dragged_widget_type")).is_some());
-        if is_dragging && ui.rect_contains_pointer(widget_rect) {
+        // Draw drop zone indicator when any payload is hovering
+        if ui.rect_contains_pointer(widget_rect) && ui.ctx().dragged_id().is_some() {
             draw_drop_zone_indicator(ui, widget_rect);
         }
 
@@ -3253,14 +3462,20 @@ impl WidgetNode for ScrollAreaWidget {
 
                 // Drop Zone for adding widgets
                 let (_response, payload_option) =
-                    ui.dnd_drop_zone::<String, _>(egui::Frame::NONE, |ui| {
-                        ui.label("Drag widget here to add...");
+                    ui.dnd_drop_zone::<DragPayload, _>(egui::Frame::NONE, |ui| {
+                        ui.set_min_size(egui::vec2(40.0, 20.0));
+                        ui.label("Drop widgets here...");
                     });
 
                 if let Some(payload) = payload_option {
-                    if ui.input(|i| i.pointer.any_released()) {
-                        if let Some(new_widget) = create_widget_by_name(&payload) {
-                            self.children.push(new_widget);
+                    match &*payload {
+                        DragPayload::NewWidget(widget_type) => {
+                            if let Some(new_widget) = create_widget_by_name(widget_type) {
+                                self.children.push(new_widget);
+                            }
+                        }
+                        DragPayload::ExistingWidget(_) => {
+                            // Could handle moving widgets into scroll area
                         }
                     }
                 }
@@ -3272,9 +3487,8 @@ impl WidgetNode for ScrollAreaWidget {
         let border_clicked = create_container_selection_overlay(ui, widget_rect, 8.0, self.id);
         handle_selection(ui, self.id, border_clicked, selection);
 
-        // Draw drop zone indicator when dragging over
-        let is_dragging = ui.memory(|mem| mem.data.get_temp::<String>(egui::Id::new("dragged_widget_type")).is_some());
-        if is_dragging && ui.rect_contains_pointer(widget_rect) {
+        // Draw drop zone indicator when any payload is hovering
+        if ui.rect_contains_pointer(widget_rect) && ui.ctx().dragged_id().is_some() {
             draw_drop_zone_indicator(ui, widget_rect);
         }
 
@@ -3696,9 +3910,8 @@ impl WidgetNode for FreeformLayout {
         let border_clicked = create_container_selection_overlay(ui, widget_rect, 10.0, self.id);
         handle_selection(ui, self.id, border_clicked, selection);
 
-        // Draw drop zone indicator when dragging over
-        let is_dragging = ui.memory(|mem| mem.data.get_temp::<String>(egui::Id::new("dragged_widget_type")).is_some());
-        if is_dragging && ui.rect_contains_pointer(widget_rect) {
+        // Draw drop zone indicator when any payload is hovering
+        if ui.rect_contains_pointer(widget_rect) && ui.ctx().dragged_id().is_some() {
             draw_drop_zone_indicator(ui, widget_rect);
         }
 
@@ -3706,22 +3919,14 @@ impl WidgetNode for FreeformLayout {
             draw_gizmo(ui, widget_rect);
         }
 
-        // Drop zone for adding widgets
-        let drop_rect = egui::Rect::from_min_size(
-            container_origin + egui::vec2(0.0, self.height - 24.0),
-            egui::vec2(self.width, 24.0),
-        );
-
-        let _drop_response = ui.allocate_rect(drop_rect, egui::Sense::hover());
-
-        // Check for drops
-        let (_drop_response, payload_option) = ui.dnd_drop_zone::<String, _>(egui::Frame::NONE, |ui| {
+        // Check for drops anywhere on the freeform layout
+        let (_drop_response, payload_option) = ui.dnd_drop_zone::<DragPayload, _>(egui::Frame::NONE, |ui| {
             ui.allocate_space(egui::vec2(0.0, 0.0)); // Invisible drop zone
         });
 
         if let Some(payload) = payload_option {
-            if ui.input(|i| i.pointer.any_released()) {
-                if let Some(widget) = create_widget_by_name(&payload) {
+            if let DragPayload::NewWidget(widget_type) = &*payload {
+                if let Some(widget) = create_widget_by_name(widget_type) {
                     let drop_pos = ui.ctx().pointer_hover_pos().unwrap_or(container_origin);
                     let relative_pos = drop_pos - container_origin;
 

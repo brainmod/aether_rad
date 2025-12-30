@@ -1,6 +1,6 @@
 use super::EditorContext;
 use crate::theme::{self, AetherColors};
-use crate::widgets;
+use crate::widgets::{self, DragPayload};
 use egui::{Color32, CornerRadius, RichText, Ui};
 
 pub fn render_palette(ui: &mut Ui, ctx: &mut EditorContext) {
@@ -109,9 +109,6 @@ fn render_widget_category(ui: &mut Ui, category: &str, widgets: &[&str], accent_
             let is_being_dragged = ui.ctx().is_being_dragged(id);
 
             if is_being_dragged {
-                // Set the dragged widget type in memory for the canvas to read
-                ui.memory_mut(|mem| mem.data.insert_temp(egui::Id::new("dragged_widget_type"), widget_type.to_string()));
-
                 // Show a ghost/preview slightly offset from the cursor
                 let cursor_pos = ui.ctx().pointer_hover_pos().unwrap_or_default();
                 let offset_pos = cursor_pos + egui::vec2(12.0, 12.0);
@@ -146,7 +143,9 @@ fn render_widget_category(ui: &mut Ui, category: &str, widgets: &[&str], accent_
                     });
             }
 
-            let dnd_response = ui.dnd_drag_source(id, widget_type.to_string(), |ui| {
+            // Use DragPayload::NewWidget for palette items
+            let payload = DragPayload::NewWidget(widget_type.to_string());
+            let dnd_response = ui.dnd_drag_source(id, payload, |ui| {
                 let response = ui.add(
                     egui::Button::new(
                         RichText::new(label)

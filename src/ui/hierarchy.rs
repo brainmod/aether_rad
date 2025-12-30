@@ -1,21 +1,18 @@
 use super::EditorContext;
 use crate::model::WidgetNode;
 use crate::theme::{self, AetherColors};
-use egui::{Color32, CornerRadius, RichText, Ui};
+use egui::{Color32, RichText, Ui};
 use std::collections::HashSet;
 use uuid::Uuid;
 
-/// Payload for hierarchy drag-and-drop
-#[derive(Clone)]
-#[allow(dead_code)]
+/// Payload for hierarchy drag-and-drop - contains the widget ID being dragged
+#[derive(Clone, PartialEq, Eq)]
 struct HierarchyDragPayload {
     widget_id: Uuid,
-    widget_name: String,
 }
 
 /// Position for drop operations
 #[derive(Clone, Copy, Debug)]
-#[allow(dead_code)]
 enum DropPosition {
     Before,
     After,
@@ -116,24 +113,18 @@ pub fn render_hierarchy(ui: &mut Ui, ctx: &mut EditorContext) {
 
     // Handle any pending drop operations
     if let Some((source_id, target_id, position)) = pending_drop {
-        // Get the currently selected widget as the drag source if source_id is nil
-        let actual_source_id = if source_id == Uuid::nil() {
-            ctx.project_state.selection.iter().next().cloned()
-        } else {
-            Some(source_id)
-        };
-
-        if let Some(src_id) = actual_source_id {
+        // Only proceed if we have a valid source (not the root)
+        if source_id != ctx.project_state.root_node.id() && source_id != target_id {
             match position {
                 DropPosition::Before => {
-                    ctx.project_state.move_widget_before(src_id, target_id);
+                    ctx.project_state.move_widget_before(source_id, target_id);
                 }
                 DropPosition::After => {
-                    ctx.project_state.move_widget_after(src_id, target_id);
+                    ctx.project_state.move_widget_after(source_id, target_id);
                 }
                 DropPosition::Into => {
                     // Move into container at end
-                    ctx.project_state.reparent_widget(src_id, target_id, usize::MAX);
+                    ctx.project_state.reparent_widget(source_id, target_id, usize::MAX);
                 }
             }
         }
@@ -163,36 +154,9 @@ fn draw_hierarchy_node_styled(
     // Read modifiers BEFORE entering any nested closures to avoid deadlock
     let cmd_held = ui.input(|i| i.modifiers.command);
 
-    // Create drag payload
+    // Create drag payload with just the widget ID
     let drag_id = egui::Id::new("hierarchy_drag").with(id);
-    let payload = HierarchyDragPayload {
-        widget_id: id,
-        widget_name: label.to_string(),
-    };
-
-    // Check if this widget is being dragged
-    let is_being_dragged = ui.ctx().is_being_dragged(drag_id);
-
-    // Don't render if being dragged (will be shown as floating preview)
-    if is_being_dragged {
-        // Show dragged item preview at cursor
-        if let Some(pos) = ui.ctx().pointer_hover_pos() {
-            egui::Area::new(egui::Id::new("hierarchy_drag_preview"))
-                .order(egui::Order::Tooltip)
-                .fixed_pos(pos + egui::vec2(10.0, 10.0))
-                .show(ui.ctx(), |ui| {
-                    egui::Frame::new()
-                        .fill(ui.style().visuals.window_fill)
-                        .stroke(egui::Stroke::new(2.0, category_color))
-                        .corner_radius(CornerRadius::same(4))
-                        .inner_margin(egui::Margin::same(4))
-                        .shadow(egui::Shadow::NONE)
-                        .show(ui, |ui| {
-                            ui.label(RichText::new(&payload.widget_name).color(category_color));
-                        });
-                });
-        }
-    }
+    let payload = HierarchyDragPayload { widget_id: id };
 
     // Main hierarchy item rendering
     if has_children {
@@ -203,29 +167,6 @@ fn draw_hierarchy_node_styled(
             category_color
         };
 
-        // Drop zone for inserting BEFORE this container
-        let _before_drop_id = egui::Id::new("drop_before").with(id);
-        let (before_rect, before_response) = ui.allocate_exact_size(
-            egui::vec2(ui.available_width(), 2.0),
-            egui::Sense::hover(),
-        );
-
-        // Check for drop on "before" zone
-        if let Some(dragged_payload) = ui.ctx().dragged_id().and_then(|did| {
-            if before_response.hovered() && did.with("hierarchy_drag") != drag_id {
-                // Visual drop indicator
-                ui.painter().rect_filled(before_rect.expand2(egui::vec2(0.0, 2.0)), 0.0, AetherColors::ACCENT);
-                Some(true)
-            } else {
-                None
-            }
-        }) {
-            if dragged_payload && ui.input(|i| i.pointer.any_released()) {
-                // Get the dragged widget ID from any currently dragged item
-                // We need to track this differently
-            }
-        }
-
         ui.horizontal(|ui| {
             ui.add_space(indent);
 
@@ -234,7 +175,7 @@ fn draw_hierarchy_node_styled(
 
             let _ = state.show_header(ui, |ui| {
                 // Make ONLY the header content draggable
-                ui.dnd_drag_source(drag_id, payload.clone(), |ui| {
+                let drag_response = ui.dnd_drag_source(drag_id, payload.clone(), |ui| {
                     let response = ui.selectable_label(
                         is_selected,
                         RichText::new(&display_text).color(text_color).strong(),
@@ -254,7 +195,7 @@ fn draw_hierarchy_node_styled(
                         }
                     }
 
-                     // Selection indicator
+                    // Selection indicator
                     if is_selected {
                         let rect = response.rect;
                         ui.painter().rect_stroke(
@@ -264,7 +205,40 @@ fn draw_hierarchy_node_styled(
                             egui::StrokeKind::Outside,
                         );
                     }
-                });
+                }).response;
+
+                // Check for hover during drag - show insertion indicator
+                if let (Some(pointer), Some(hovered_payload)) = (
+                    ui.input(|i| i.pointer.interact_pos()),
+                    drag_response.dnd_hover_payload::<HierarchyDragPayload>(),
+                ) {
+                    let rect = drag_response.rect;
+                    let stroke = egui::Stroke::new(2.0, AetherColors::ACCENT);
+
+                    // Don't show indicator if dragging over self
+                    if hovered_payload.widget_id != id {
+                        if pointer.y < rect.center().y {
+                            // Insert before
+                            ui.painter().hline(rect.x_range(), rect.top() - 1.0, stroke);
+                            if let Some(released) = drag_response.dnd_release_payload::<HierarchyDragPayload>() {
+                                *pending_drop = Some((released.widget_id, id, DropPosition::Before));
+                            }
+                        } else {
+                            // Insert after (or into if container)
+                            if is_container {
+                                ui.painter().rect_stroke(rect.expand(2.0), 4.0, stroke, egui::StrokeKind::Outside);
+                                if let Some(released) = drag_response.dnd_release_payload::<HierarchyDragPayload>() {
+                                    *pending_drop = Some((released.widget_id, id, DropPosition::Into));
+                                }
+                            } else {
+                                ui.painter().hline(rect.x_range(), rect.bottom() + 1.0, stroke);
+                                if let Some(released) = drag_response.dnd_release_payload::<HierarchyDragPayload>() {
+                                    *pending_drop = Some((released.widget_id, id, DropPosition::After));
+                                }
+                            }
+                        }
+                    }
+                }
             });
         });
 
@@ -278,23 +252,26 @@ fn draw_hierarchy_node_styled(
                     egui::Sense::hover(),
                 );
 
-                // Visual indicator for drop target
-                if drop_response.hovered() && ui.ctx().dragged_id().is_some() {
-                    ui.painter().rect_filled(
-                        drop_rect,
-                        2.0,
-                        Color32::from_rgba_unmultiplied(100, 200, 100, 100),
-                    );
-                    ui.painter().rect_stroke(
-                        drop_rect,
-                        2.0,
-                        egui::Stroke::new(2.0, AetherColors::ACCENT),
-                        egui::StrokeKind::Inside,
-                    );
+                // Check for hover payload
+                if let Some(hovered_payload) = drop_response.dnd_hover_payload::<HierarchyDragPayload>() {
+                    // Don't allow dropping into self
+                    if hovered_payload.widget_id != id {
+                        ui.painter().rect_filled(
+                            drop_rect,
+                            2.0,
+                            Color32::from_rgba_unmultiplied(100, 200, 100, 100),
+                        );
+                        ui.painter().rect_stroke(
+                            drop_rect,
+                            2.0,
+                            egui::Stroke::new(2.0, AetherColors::ACCENT),
+                            egui::StrokeKind::Inside,
+                        );
 
-                    // Handle drop
-                    if ui.input(|i| i.pointer.any_released()) {
-                        *pending_drop = Some((Uuid::nil(), id, DropPosition::Into));
+                        // Handle drop
+                        if let Some(released) = drop_response.dnd_release_payload::<HierarchyDragPayload>() {
+                            *pending_drop = Some((released.widget_id, id, DropPosition::Into));
+                        }
                     }
                 }
             }
@@ -318,7 +295,7 @@ fn draw_hierarchy_node_styled(
             };
 
             // Make the leaf draggable
-            ui.dnd_drag_source(drag_id, payload, |ui| {
+            let drag_response = ui.dnd_drag_source(drag_id, payload, |ui| {
                 let response = ui.selectable_label(
                     is_selected,
                     RichText::new(display_text).color(text_color),
@@ -336,20 +313,33 @@ fn draw_hierarchy_node_styled(
                         selection.insert(id);
                     }
                 }
+            }).response;
 
-                // Drop indicator below this item
-                if response.hovered() && ui.ctx().dragged_id().is_some() {
-                    let rect = response.rect;
-                    ui.painter().line_segment(
-                        [rect.left_bottom(), rect.right_bottom()],
-                        egui::Stroke::new(2.0, AetherColors::ACCENT),
-                    );
+            // Check for hover during drag - show insertion indicator
+            if let (Some(pointer), Some(hovered_payload)) = (
+                ui.input(|i| i.pointer.interact_pos()),
+                drag_response.dnd_hover_payload::<HierarchyDragPayload>(),
+            ) {
+                // Don't show indicator if dragging over self
+                if hovered_payload.widget_id != id {
+                    let rect = drag_response.rect;
+                    let stroke = egui::Stroke::new(2.0, AetherColors::ACCENT);
 
-                    if ui.input(|i| i.pointer.any_released()) {
-                        *pending_drop = Some((Uuid::nil(), id, DropPosition::After));
+                    if pointer.y < rect.center().y {
+                        // Insert before
+                        ui.painter().hline(rect.x_range(), rect.top() - 1.0, stroke);
+                        if let Some(released) = drag_response.dnd_release_payload::<HierarchyDragPayload>() {
+                            *pending_drop = Some((released.widget_id, id, DropPosition::Before));
+                        }
+                    } else {
+                        // Insert after
+                        ui.painter().hline(rect.x_range(), rect.bottom() + 1.0, stroke);
+                        if let Some(released) = drag_response.dnd_release_payload::<HierarchyDragPayload>() {
+                            *pending_drop = Some((released.widget_id, id, DropPosition::After));
+                        }
                     }
                 }
-            });
+            }
         });
     }
 }
