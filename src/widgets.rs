@@ -8,9 +8,38 @@ use uuid::Uuid;
 // ... existing imports
 // Ensure you import ButtonWidget and the necessary macros
 
+/// Create a widget by its display name
+pub fn create_widget_by_name(name: &str) -> Option<Box<dyn WidgetNode>> {
+    Some(match name {
+        "Button" => Box::new(ButtonWidget::default()),
+        "Label" => Box::new(LabelWidget::default()),
+        "Text Edit" => Box::new(TextEditWidget::default()),
+        "Checkbox" => Box::new(CheckboxWidget::default()),
+        "Slider" => Box::new(SliderWidget::default()),
+        "Progress Bar" => Box::new(ProgressBarWidget::default()),
+        "ComboBox" => Box::new(ComboBoxWidget::default()),
+        "Image" => Box::new(ImageWidget::default()),
+        "Vertical Layout" => Box::new(VerticalLayout::default()),
+        "Horizontal Layout" => Box::new(HorizontalLayout::default()),
+        "Grid Layout" => Box::new(GridLayout::default()),
+        "Freeform Layout" => Box::new(FreeformLayout::default()),
+        "Separator" => Box::new(SeparatorWidget::default()),
+        "Spinner" => Box::new(SpinnerWidget::default()),
+        "Hyperlink" => Box::new(HyperlinkWidget::default()),
+        "Color Picker" => Box::new(ColorPickerWidget::default()),
+        "Table" => Box::new(TableWidget::default()),
+        "Plot" => Box::new(PlotWidget::default()),
+        "Scroll Area" => Box::new(ScrollAreaWidget::default()),
+        "Tab Container" => Box::new(TabContainerWidget::default()),
+        "Window" => Box::new(WindowWidget::default()),
+        _ => return None,
+    })
+}
+
 // === Gizmo Helper Functions ===
 
 const GIZMO_COLOR: egui::Color32 = egui::Color32::from_rgb(255, 165, 0);
+const DROP_ZONE_COLOR: egui::Color32 = egui::Color32::from_rgb(100, 200, 255);
 const HANDLE_SIZE: f32 = 8.0;
 
 /// Draw a selection gizmo (orange outline) around a widget
@@ -21,6 +50,21 @@ fn draw_gizmo(ui: &egui::Ui, rect: egui::Rect) {
         egui::Stroke::new(2.0, GIZMO_COLOR),
         egui::StrokeKind::Outside,
     );
+}
+
+/// Draw a drop zone indicator (dashed blue border) when dragging over a container
+fn draw_drop_zone_indicator(ui: &egui::Ui, rect: egui::Rect) {
+    // Draw a glowing border effect
+    let expanded = rect.expand(2.0);
+    ui.painter().rect_stroke(
+        expanded,
+        4.0,
+        egui::Stroke::new(2.0, DROP_ZONE_COLOR),
+        egui::StrokeKind::Outside,
+    );
+    // Draw inner glow
+    let fill_color = egui::Color32::from_rgba_unmultiplied(100, 200, 255, 20);
+    ui.painter().rect_filled(rect, 4.0, fill_color);
 }
 
 /// Draw resize handles at the corners and edges of a rect
@@ -94,6 +138,7 @@ fn handle_selection(ui: &egui::Ui, widget_id: Uuid, response_clicked: bool, sele
 
 /// Context menu action for widgets
 #[derive(Debug, Clone, PartialEq)]
+#[allow(dead_code)]
 pub enum ContextMenuAction {
     None,
     Delete,
@@ -404,7 +449,7 @@ impl WidgetNode for VerticalLayout {
                             if ui.rect_contains_pointer(ui.min_rect()) {
                                 ui.add_space(self.spacing);
                                 ui.vertical(|ui| {
-                                    ui.set_enabled(false); // Make it look like a ghost
+                                    ui.disable(); // Make it look like a ghost
                                     ui.ctx().set_cursor_icon(egui::CursorIcon::Copy); // Indicate copy/add
                                     render_widget_preview(ui, &dragged_type, egui::Color32::WHITE);
                                 });
@@ -419,6 +464,12 @@ impl WidgetNode for VerticalLayout {
         let border_clicked = create_container_selection_overlay(ui, widget_rect, self.padding.max(8.0), self.id);
         handle_selection(ui, self.id, border_clicked, selection);
 
+        // Draw drop zone indicator when dragging over
+        let is_dragging = ui.memory(|mem| mem.data.get_temp::<String>(egui::Id::new("dragged_widget_type")).is_some());
+        if is_dragging && ui.rect_contains_pointer(widget_rect) {
+            draw_drop_zone_indicator(ui, widget_rect);
+        }
+
         // Gizmo (Outline) if selected
         if selection.contains(&self.id) {
             draw_gizmo(ui, widget_rect);
@@ -426,33 +477,10 @@ impl WidgetNode for VerticalLayout {
 
         // Handle Drop
         if let Some(payload) = payload_option {
-            // Check if dropped
             if ui.input(|i| i.pointer.any_released()) {
-                let new_widget: Box<dyn WidgetNode> = match payload.as_str() {
-                    "Button" => Box::new(ButtonWidget::default()),
-                    "Label" => Box::new(LabelWidget::default()),
-                    "Text Edit" => Box::new(TextEditWidget::default()),
-                    "Checkbox" => Box::new(CheckboxWidget::default()),
-                    "Slider" => Box::new(SliderWidget::default()),
-                    "Progress Bar" => Box::new(ProgressBarWidget::default()),
-                    "ComboBox" => Box::new(ComboBoxWidget::default()),
-                    "Image" => Box::new(ImageWidget::default()),
-                    "Vertical Layout" => Box::new(VerticalLayout::default()),
-                    "Horizontal Layout" => Box::new(HorizontalLayout::default()),
-                    "Grid Layout" => Box::new(GridLayout::default()),
-                    "Separator" => Box::new(SeparatorWidget::default()),
-                    "Spinner" => Box::new(SpinnerWidget::default()),
-                    "Hyperlink" => Box::new(HyperlinkWidget::default()),
-                    "Color Picker" => Box::new(ColorPickerWidget::default()),
-                    "Table" => Box::new(TableWidget::default()),
-                    "Plot" => Box::new(PlotWidget::default()),
-                    "Scroll Area" => Box::new(ScrollAreaWidget::default()),
-                    "Tab Container" => Box::new(TabContainerWidget::default()),
-                    "Window" => Box::new(WindowWidget::default()),
-                    "Freeform Layout" => Box::new(FreeformLayout::default()),
-                    _ => return,
-                };
-                self.children.push(new_widget);
+                if let Some(new_widget) = create_widget_by_name(&payload) {
+                    self.children.push(new_widget);
+                }
             }
         }
     }
@@ -608,37 +636,21 @@ impl WidgetNode for HorizontalLayout {
         let border_clicked = create_container_selection_overlay(ui, widget_rect, 8.0, self.id);
         handle_selection(ui, self.id, border_clicked, selection);
 
+        // Draw drop zone indicator when dragging over
+        let is_dragging = ui.memory(|mem| mem.data.get_temp::<String>(egui::Id::new("dragged_widget_type")).is_some());
+        if is_dragging && ui.rect_contains_pointer(widget_rect) {
+            draw_drop_zone_indicator(ui, widget_rect);
+        }
+
         if selection.contains(&self.id) {
             draw_gizmo(ui, widget_rect);
         }
 
         if let Some(payload) = payload_option {
             if ui.input(|i| i.pointer.any_released()) {
-                let new_widget: Box<dyn WidgetNode> = match payload.as_str() {
-                    "Button" => Box::new(ButtonWidget::default()),
-                    "Label" => Box::new(LabelWidget::default()),
-                    "Text Edit" => Box::new(TextEditWidget::default()),
-                    "Checkbox" => Box::new(CheckboxWidget::default()),
-                    "Slider" => Box::new(SliderWidget::default()),
-                    "Progress Bar" => Box::new(ProgressBarWidget::default()),
-                    "ComboBox" => Box::new(ComboBoxWidget::default()),
-                    "Image" => Box::new(ImageWidget::default()),
-                    "Vertical Layout" => Box::new(VerticalLayout::default()),
-                    "Horizontal Layout" => Box::new(HorizontalLayout::default()),
-                    "Grid Layout" => Box::new(GridLayout::default()),
-                    "Separator" => Box::new(SeparatorWidget::default()),
-                    "Spinner" => Box::new(SpinnerWidget::default()),
-                    "Hyperlink" => Box::new(HyperlinkWidget::default()),
-                    "Color Picker" => Box::new(ColorPickerWidget::default()),
-                    "Table" => Box::new(TableWidget::default()),
-                    "Plot" => Box::new(PlotWidget::default()),
-                    "Scroll Area" => Box::new(ScrollAreaWidget::default()),
-                    "Tab Container" => Box::new(TabContainerWidget::default()),
-                    "Window" => Box::new(WindowWidget::default()),
-                    "Freeform Layout" => Box::new(FreeformLayout::default()),
-                    _ => return,
-                };
-                self.children.push(new_widget);
+                if let Some(new_widget) = create_widget_by_name(&payload) {
+                    self.children.push(new_widget);
+                }
             }
         }
     }
@@ -751,37 +763,21 @@ impl WidgetNode for GridLayout {
         let border_clicked = create_container_selection_overlay(ui, widget_rect, 8.0, self.id);
         handle_selection(ui, self.id, border_clicked, selection);
 
+        // Draw drop zone indicator when dragging over
+        let is_dragging = ui.memory(|mem| mem.data.get_temp::<String>(egui::Id::new("dragged_widget_type")).is_some());
+        if is_dragging && ui.rect_contains_pointer(widget_rect) {
+            draw_drop_zone_indicator(ui, widget_rect);
+        }
+
         if selection.contains(&self.id) {
             draw_gizmo(ui, widget_rect);
         }
 
         if let Some(payload) = payload_option {
             if ui.input(|i| i.pointer.any_released()) {
-                let new_widget: Box<dyn WidgetNode> = match payload.as_str() {
-                    "Button" => Box::new(ButtonWidget::default()),
-                    "Label" => Box::new(LabelWidget::default()),
-                    "Text Edit" => Box::new(TextEditWidget::default()),
-                    "Checkbox" => Box::new(CheckboxWidget::default()),
-                    "Slider" => Box::new(SliderWidget::default()),
-                    "Progress Bar" => Box::new(ProgressBarWidget::default()),
-                    "ComboBox" => Box::new(ComboBoxWidget::default()),
-                    "Image" => Box::new(ImageWidget::default()),
-                    "Vertical Layout" => Box::new(VerticalLayout::default()),
-                    "Horizontal Layout" => Box::new(HorizontalLayout::default()),
-                    "Grid Layout" => Box::new(GridLayout::default()),
-                    "Separator" => Box::new(SeparatorWidget::default()),
-                    "Spinner" => Box::new(SpinnerWidget::default()),
-                    "Hyperlink" => Box::new(HyperlinkWidget::default()),
-                    "Color Picker" => Box::new(ColorPickerWidget::default()),
-                    "Table" => Box::new(TableWidget::default()),
-                    "Plot" => Box::new(PlotWidget::default()),
-                    "Scroll Area" => Box::new(ScrollAreaWidget::default()),
-                    "Tab Container" => Box::new(TabContainerWidget::default()),
-                    "Window" => Box::new(WindowWidget::default()),
-                    "Freeform Layout" => Box::new(FreeformLayout::default()),
-                    _ => return,
-                };
-                self.children.push(new_widget);
+                if let Some(new_widget) = create_widget_by_name(&payload) {
+                    self.children.push(new_widget);
+                }
             }
         }
     }
@@ -881,22 +877,50 @@ impl WidgetNode for ButtonWidget {
 
     // Render logic for the Editor Canvas
     fn render_editor(&mut self, ui: &mut Ui, selection: &mut HashSet<Uuid>) {
-        // In the editor, we just draw the button.
-        let response = ui.button(&self.text);
-        let widget_rect = response.rect;
+        let is_selected = selection.contains(&self.id);
 
-        // Create selection overlay for better hit detection
-        let overlay = create_selection_overlay(ui, widget_rect, self.id);
+        // Use styled button with selection indicator
+        let text_color = if is_selected {
+            egui::Color32::from_rgb(255, 200, 100)
+        } else {
+            ui.style().visuals.text_color()
+        };
 
-        // Handle selection via overlay (more reliable than the button itself)
-        handle_selection(ui, self.id, overlay.clicked(), selection);
+        // Allocate rect first for reliable hit detection
+        let desired_size = egui::vec2(ui.available_width().min(150.0), 28.0);
+        let (rect, response) = ui.allocate_exact_size(desired_size, egui::Sense::click());
 
-        if selection.contains(&self.id) {
-            draw_gizmo(ui, widget_rect);
+        // Draw button visuals
+        let visuals = ui.style().interact(&response);
+        ui.painter().rect(
+            rect,
+            visuals.corner_radius,
+            visuals.bg_fill,
+            visuals.bg_stroke,
+            egui::StrokeKind::Inside,
+        );
+        ui.painter().text(
+            rect.center(),
+            egui::Align2::CENTER_CENTER,
+            &self.text,
+            egui::FontId::default(),
+            text_color,
+        );
+
+        // Handle selection directly from response
+        handle_selection(ui, self.id, response.clicked(), selection);
+
+        // Add context menu
+        response.context_menu(|ui| {
+            render_widget_context_menu(ui, self.id);
+        });
+
+        if is_selected {
+            draw_gizmo(ui, rect);
         }
 
         // Show tooltip on hover
-        overlay.on_hover_text(format!("Button: {}\nID: {}", self.text, self.id));
+        response.on_hover_text(format!("Button: {}\nID: {}", self.text, self.id));
     }
 
     // The "Inspectable" pattern: The widget defines its own property UI.
@@ -1046,7 +1070,7 @@ pub fn render_widget_preview(ui: &mut Ui, widget_type: &str, accent_color: egui:
 
     match widget_type {
         "Button" => {
-            ui.button("Click Me");
+            let _ = ui.button("Click Me");
         }
         "Label" => {
             ui.label("Label Text");
@@ -1174,21 +1198,45 @@ impl WidgetNode for LabelWidget {
     }
 
     fn render_editor(&mut self, ui: &mut Ui, selection: &mut HashSet<Uuid>) {
-        let response = ui.label(&self.text);
-        let widget_rect = response.rect;
+        let is_selected = selection.contains(&self.id);
 
-        // Create selection overlay for better hit detection
-        let overlay = create_selection_overlay(ui, widget_rect, self.id);
+        // Calculate size needed for the label
+        let galley = ui.fonts(|f| {
+            f.layout_no_wrap(self.text.clone(), egui::FontId::default(), ui.style().visuals.text_color())
+        });
+        let desired_size = galley.size() + egui::vec2(4.0, 4.0);
 
-        // Handle selection via overlay
-        handle_selection(ui, self.id, overlay.clicked(), selection);
+        // Allocate rect with click sensing for selection
+        let (rect, response) = ui.allocate_exact_size(desired_size, egui::Sense::click());
 
-        if selection.contains(&self.id) {
-            draw_gizmo(ui, widget_rect);
+        // Draw label text
+        let text_color = if is_selected {
+            egui::Color32::from_rgb(255, 200, 100)
+        } else {
+            ui.style().visuals.text_color()
+        };
+        ui.painter().text(
+            rect.left_center() + egui::vec2(2.0, 0.0),
+            egui::Align2::LEFT_CENTER,
+            &self.text,
+            egui::FontId::default(),
+            text_color,
+        );
+
+        // Handle selection directly from response
+        handle_selection(ui, self.id, response.clicked(), selection);
+
+        // Add context menu
+        response.context_menu(|ui| {
+            render_widget_context_menu(ui, self.id);
+        });
+
+        if is_selected {
+            draw_gizmo(ui, rect);
         }
 
         // Show tooltip
-        overlay.on_hover_text(format!("Label: {}\nID: {}", self.text, self.id));
+        response.on_hover_text(format!("Label: {}\nID: {}", self.text, self.id));
     }
 
     fn inspect(&mut self, ui: &mut Ui, known_variables: &[String], _known_assets: &[(String, String)]) {
@@ -1274,25 +1322,51 @@ impl WidgetNode for TextEditWidget {
     }
 
     fn render_editor(&mut self, ui: &mut Ui, selection: &mut HashSet<Uuid>) {
-        let response = ui.text_edit_singleline(&mut self.text);
-        let widget_rect = response.rect;
+        let is_selected = selection.contains(&self.id);
 
-        // Create selection overlay for better hit detection
-        let overlay = create_selection_overlay(ui, widget_rect, self.id);
+        // Allocate rect for text field visual
+        let desired_size = egui::vec2(ui.available_width().min(200.0), 24.0);
+        let (rect, response) = ui.allocate_exact_size(desired_size, egui::Sense::click());
 
-        // Handle selection via overlay (also select on focus)
-        if overlay.clicked() || response.has_focus() {
-            if !selection.contains(&self.id) {
-                selection.clear();
-                selection.insert(self.id);
-            }
-        }
-        if selection.contains(&self.id) {
-            draw_gizmo(ui, widget_rect);
+        // Draw text field visuals (looks like text_edit but non-interactive)
+        let visuals = ui.style().interact(&response);
+        ui.painter().rect(
+            rect,
+            visuals.corner_radius,
+            ui.style().visuals.extreme_bg_color,
+            visuals.bg_stroke,
+            egui::StrokeKind::Inside,
+        );
+
+        // Draw text content
+        let text_color = if is_selected {
+            egui::Color32::from_rgb(255, 200, 100)
+        } else {
+            ui.style().visuals.text_color()
+        };
+        let display_text = if self.text.is_empty() { "..." } else { &self.text };
+        ui.painter().text(
+            rect.left_center() + egui::vec2(6.0, 0.0),
+            egui::Align2::LEFT_CENTER,
+            display_text,
+            egui::FontId::default(),
+            text_color,
+        );
+
+        // Handle selection
+        handle_selection(ui, self.id, response.clicked(), selection);
+
+        // Add context menu
+        response.context_menu(|ui| {
+            render_widget_context_menu(ui, self.id);
+        });
+
+        if is_selected {
+            draw_gizmo(ui, rect);
         }
 
         // Show tooltip
-        overlay.on_hover_text(format!("Text Edit: {}\nID: {}", self.text, self.id));
+        response.on_hover_text(format!("Text Edit: {}\nID: {}", self.text, self.id));
     }
 
     fn inspect(&mut self, ui: &mut Ui, known_variables: &[String], _known_assets: &[(String, String)]) {
@@ -1466,19 +1540,72 @@ impl WidgetNode for CheckboxWidget {
     }
 
     fn render_editor(&mut self, ui: &mut Ui, selection: &mut HashSet<Uuid>) {
-        let response = ui.checkbox(&mut self.checked, &self.label);
-        let widget_rect = response.rect;
+        let is_selected = selection.contains(&self.id);
 
-        // Create selection overlay for better hit detection
-        let overlay = create_selection_overlay(ui, widget_rect, self.id);
-        handle_selection(ui, self.id, overlay.clicked(), selection);
+        // Calculate size for checkbox + label
+        let galley = ui.fonts(|f| {
+            f.layout_no_wrap(self.label.clone(), egui::FontId::default(), ui.style().visuals.text_color())
+        });
+        let checkbox_size = 18.0;
+        let spacing = 4.0;
+        let desired_size = egui::vec2(checkbox_size + spacing + galley.size().x + 4.0, checkbox_size.max(galley.size().y) + 4.0);
 
-        if selection.contains(&self.id) {
-            draw_gizmo(ui, widget_rect);
+        // Allocate rect with click sensing
+        let (rect, response) = ui.allocate_exact_size(desired_size, egui::Sense::click());
+
+        // Draw checkbox visual
+        let checkbox_rect = egui::Rect::from_min_size(
+            rect.left_center() - egui::vec2(0.0, checkbox_size / 2.0),
+            egui::vec2(checkbox_size, checkbox_size),
+        );
+        let visuals = ui.style().interact(&response);
+        ui.painter().rect(
+            checkbox_rect,
+            2.0,
+            visuals.bg_fill,
+            visuals.bg_stroke,
+            egui::StrokeKind::Inside,
+        );
+
+        // Draw checkmark if checked
+        if self.checked {
+            ui.painter().text(
+                checkbox_rect.center(),
+                egui::Align2::CENTER_CENTER,
+                "✓",
+                egui::FontId::default(),
+                ui.style().visuals.text_color(),
+            );
+        }
+
+        // Draw label
+        let text_color = if is_selected {
+            egui::Color32::from_rgb(255, 200, 100)
+        } else {
+            ui.style().visuals.text_color()
+        };
+        ui.painter().text(
+            egui::pos2(checkbox_rect.right() + spacing, rect.center().y),
+            egui::Align2::LEFT_CENTER,
+            &self.label,
+            egui::FontId::default(),
+            text_color,
+        );
+
+        // Handle selection
+        handle_selection(ui, self.id, response.clicked(), selection);
+
+        // Add context menu
+        response.context_menu(|ui| {
+            render_widget_context_menu(ui, self.id);
+        });
+
+        if is_selected {
+            draw_gizmo(ui, rect);
         }
 
         // Show tooltip
-        overlay.on_hover_text(format!("Checkbox: {} ({})\nID: {}", self.label, if self.checked { "✓" } else { "☐" }, self.id));
+        response.on_hover_text(format!("Checkbox: {} ({})\nID: {}", self.label, if self.checked { "✓" } else { "☐" }, self.id));
     }
 
     fn inspect(&mut self, ui: &mut Ui, known_variables: &[String], _known_assets: &[(String, String)]) {
@@ -1626,25 +1753,68 @@ impl WidgetNode for SliderWidget {
     }
 
     fn render_editor(&mut self, ui: &mut Ui, selection: &mut HashSet<Uuid>) {
-        let response = ui.add(egui::Slider::new(&mut self.value, self.min..=self.max));
-        let widget_rect = response.rect;
+        let is_selected = selection.contains(&self.id);
 
-        // Create selection overlay for better hit detection
-        let overlay = create_selection_overlay(ui, widget_rect, self.id);
+        // Allocate rect for slider visual
+        let desired_size = egui::vec2(ui.available_width().min(200.0), 20.0);
+        let (rect, response) = ui.allocate_exact_size(desired_size, egui::Sense::click());
 
-        // Select on overlay click or when slider is dragged
-        if overlay.clicked() || response.dragged() {
-            if !selection.contains(&self.id) {
-                selection.clear();
-                selection.insert(self.id);
-            }
-        }
-        if selection.contains(&self.id) {
-            draw_gizmo(ui, widget_rect);
+        // Draw slider track
+        let track_height = 4.0;
+        let track_rect = egui::Rect::from_center_size(
+            rect.center(),
+            egui::vec2(rect.width() - 20.0, track_height),
+        );
+        ui.painter().rect(
+            track_rect,
+            2.0,
+            ui.style().visuals.widgets.inactive.bg_fill,
+            egui::Stroke::NONE,
+            egui::StrokeKind::Inside,
+        );
+
+        // Draw slider handle position based on value
+        let normalized = (self.value - self.min) / (self.max - self.min);
+        let handle_x = track_rect.left() + normalized as f32 * track_rect.width();
+        let handle_rect = egui::Rect::from_center_size(
+            egui::pos2(handle_x, rect.center().y),
+            egui::vec2(12.0, 16.0),
+        );
+        let handle_color = if is_selected {
+            egui::Color32::from_rgb(255, 200, 100)
+        } else {
+            ui.style().visuals.widgets.active.bg_fill
+        };
+        ui.painter().rect(handle_rect, 3.0, handle_color, egui::Stroke::NONE, egui::StrokeKind::Inside);
+
+        // Draw value text
+        let text_color = if is_selected {
+            egui::Color32::from_rgb(255, 200, 100)
+        } else {
+            ui.style().visuals.text_color()
+        };
+        ui.painter().text(
+            egui::pos2(rect.right() - 5.0, rect.center().y),
+            egui::Align2::RIGHT_CENTER,
+            format!("{:.1}", self.value),
+            egui::FontId::proportional(10.0),
+            text_color,
+        );
+
+        // Handle selection
+        handle_selection(ui, self.id, response.clicked(), selection);
+
+        // Add context menu
+        response.context_menu(|ui| {
+            render_widget_context_menu(ui, self.id);
+        });
+
+        if is_selected {
+            draw_gizmo(ui, rect);
         }
 
         // Show tooltip
-        overlay.on_hover_text(format!("Slider: {} ({}-{})\nID: {}", self.value, self.min, self.max, self.id));
+        response.on_hover_text(format!("Slider: {} ({}-{})\nID: {}", self.value, self.min, self.max, self.id));
     }
 
     fn inspect(&mut self, ui: &mut Ui, known_variables: &[String], _known_assets: &[(String, String)]) {
@@ -1793,19 +1963,50 @@ impl WidgetNode for ProgressBarWidget {
     }
 
     fn render_editor(&mut self, ui: &mut Ui, selection: &mut HashSet<Uuid>) {
-        let response = ui.add(egui::ProgressBar::new(self.value).show_percentage());
-        let widget_rect = response.rect;
+        let is_selected = selection.contains(&self.id);
 
-        // Create selection overlay for better hit detection
-        let overlay = create_selection_overlay(ui, widget_rect, self.id);
-        handle_selection(ui, self.id, overlay.clicked(), selection);
+        // Allocate rect for progress bar
+        let desired_size = egui::vec2(ui.available_width().min(200.0), 20.0);
+        let (rect, response) = ui.allocate_exact_size(desired_size, egui::Sense::click());
 
-        if selection.contains(&self.id) {
-            draw_gizmo(ui, widget_rect);
+        // Draw progress bar background
+        let bg_color = ui.style().visuals.widgets.inactive.bg_fill;
+        ui.painter().rect(rect, 3.0, bg_color, egui::Stroke::NONE, egui::StrokeKind::Inside);
+
+        // Draw progress fill
+        let fill_width = rect.width() * self.value;
+        let fill_rect = egui::Rect::from_min_size(rect.min, egui::vec2(fill_width, rect.height()));
+        let fill_color = if is_selected {
+            egui::Color32::from_rgb(255, 200, 100)
+        } else {
+            egui::Color32::from_rgb(100, 150, 255)
+        };
+        ui.painter().rect(fill_rect, 3.0, fill_color, egui::Stroke::NONE, egui::StrokeKind::Inside);
+
+        // Draw percentage text
+        let text = format!("{:.0}%", self.value * 100.0);
+        ui.painter().text(
+            rect.center(),
+            egui::Align2::CENTER_CENTER,
+            &text,
+            egui::FontId::default(),
+            ui.style().visuals.text_color(),
+        );
+
+        // Handle selection
+        handle_selection(ui, self.id, response.clicked(), selection);
+
+        // Add context menu
+        response.context_menu(|ui| {
+            render_widget_context_menu(ui, self.id);
+        });
+
+        if is_selected {
+            draw_gizmo(ui, rect);
         }
 
         // Show tooltip
-        overlay.on_hover_text(format!("Progress Bar: {:.0}%\nID: {}", self.value * 100.0, self.id));
+        response.on_hover_text(format!("Progress Bar: {:.0}%\nID: {}", self.value * 100.0, self.id));
     }
 
     fn inspect(&mut self, ui: &mut Ui, known_variables: &[String], _known_assets: &[(String, String)]) {
@@ -1911,33 +2112,80 @@ impl WidgetNode for ComboBoxWidget {
     }
 
     fn render_editor(&mut self, ui: &mut Ui, selection: &mut HashSet<Uuid>) {
-        let outer_response = ui.horizontal(|ui| {
-            ui.label(&self.label);
+        let is_selected = selection.contains(&self.id);
 
-            let selected_text = self.options.get(self.selected).map(|s| s.as_str()).unwrap_or("");
-            let response = egui::ComboBox::from_id_salt(format!("combo_{}", self.id))
-                .selected_text(selected_text)
-                .show_ui(ui, |ui| {
-                    for (idx, opt) in self.options.iter().enumerate() {
-                        ui.selectable_value(&mut self.selected, idx, opt);
-                    }
-                });
+        // Calculate size for label + dropdown visual
+        let label_galley = ui.fonts(|f| {
+            f.layout_no_wrap(self.label.clone(), egui::FontId::default(), ui.style().visuals.text_color())
+        });
+        let selected_text = self.options.get(self.selected).map(|s| s.as_str()).unwrap_or("...");
+        let dropdown_width = 120.0;
+        let total_width = label_galley.size().x + 8.0 + dropdown_width;
+        let height = 24.0;
 
-            if response.response.clicked() {
-                selection.clear();
-                selection.insert(self.id);
-            }
+        // Allocate rect with click sensing
+        let (rect, response) = ui.allocate_exact_size(egui::vec2(total_width, height), egui::Sense::click());
 
-            if selection.contains(&self.id) {
-                draw_gizmo(ui, response.response.rect);
-            }
+        // Draw label
+        let text_color = if is_selected {
+            egui::Color32::from_rgb(255, 200, 100)
+        } else {
+            ui.style().visuals.text_color()
+        };
+        ui.painter().text(
+            rect.left_center() + egui::vec2(2.0, 0.0),
+            egui::Align2::LEFT_CENTER,
+            &self.label,
+            egui::FontId::default(),
+            text_color,
+        );
 
-            response.response
+        // Draw dropdown visual
+        let dropdown_rect = egui::Rect::from_min_size(
+            egui::pos2(rect.left() + label_galley.size().x + 8.0, rect.top()),
+            egui::vec2(dropdown_width, height),
+        );
+        let visuals = ui.style().interact(&response);
+        ui.painter().rect(
+            dropdown_rect,
+            visuals.corner_radius,
+            visuals.bg_fill,
+            visuals.bg_stroke,
+            egui::StrokeKind::Inside,
+        );
+
+        // Draw selected text
+        ui.painter().text(
+            dropdown_rect.left_center() + egui::vec2(6.0, 0.0),
+            egui::Align2::LEFT_CENTER,
+            selected_text,
+            egui::FontId::default(),
+            text_color,
+        );
+
+        // Draw dropdown arrow
+        ui.painter().text(
+            dropdown_rect.right_center() - egui::vec2(14.0, 0.0),
+            egui::Align2::CENTER_CENTER,
+            "▼",
+            egui::FontId::proportional(10.0),
+            text_color,
+        );
+
+        // Handle selection
+        handle_selection(ui, self.id, response.clicked(), selection);
+
+        // Add context menu
+        response.context_menu(|ui| {
+            render_widget_context_menu(ui, self.id);
         });
 
+        if is_selected {
+            draw_gizmo(ui, rect);
+        }
+
         // Show tooltip
-        let selected_text = self.options.get(self.selected).map(|s| s.as_str()).unwrap_or("");
-        outer_response.response.on_hover_text(format!("ComboBox: {}\nSelected: {}\nID: {}", self.label, selected_text, self.id));
+        response.on_hover_text(format!("ComboBox: {}\nSelected: {}\nID: {}", self.label, selected_text, self.id));
     }
 
     fn inspect(&mut self, ui: &mut Ui, known_variables: &[String], _known_assets: &[(String, String)]) {
@@ -1946,6 +2194,7 @@ impl WidgetNode for ComboBoxWidget {
         ui.horizontal(|ui| {
             ui.label("Label:");
             ui.text_edit_singleline(&mut self.label);
+            reset_button(ui, &mut self.label, "Select...".to_string());
         });
 
         ui.separator();
@@ -2244,8 +2493,8 @@ impl WidgetNode for ImageWidget {
                     }
                 }
             }
-        } else {
-            ui.label(format!("Using asset: {}", self.asset_name.as_ref().unwrap()));
+        } else if let Some(asset_name) = &self.asset_name {
+            ui.label(format!("Using asset: {}", asset_name));
         }
 
         ui.separator();
@@ -2456,6 +2705,7 @@ impl WidgetNode for SpinnerWidget {
         ui.horizontal(|ui| {
             ui.label("Size:");
             ui.add(egui::DragValue::new(&mut self.size).speed(1.0).range(10.0..=100.0));
+            reset_button(ui, &mut self.size, 20.0);
         });
         ui.label(format!("ID: {}", self.id));
     }
@@ -2519,10 +2769,12 @@ impl WidgetNode for HyperlinkWidget {
         ui.horizontal(|ui| {
             ui.label("Text:");
             ui.text_edit_singleline(&mut self.text);
+            reset_button(ui, &mut self.text, "Click here".to_string());
         });
         ui.horizontal(|ui| {
             ui.label("URL:");
             ui.text_edit_singleline(&mut self.url);
+            reset_button(ui, &mut self.url, "https://example.com".to_string());
         });
         ui.label(format!("ID: {}", self.id));
     }
@@ -2623,30 +2875,9 @@ impl WidgetNode for WindowWidget {
 
             if let Some(payload) = payload_option {
                 if ui.input(|i| i.pointer.any_released()) {
-                    let new_widget: Box<dyn WidgetNode> = match payload.as_str() {
-                        "Button" => Box::new(ButtonWidget::default()),
-                        "Label" => Box::new(LabelWidget::default()),
-                        "Text Edit" => Box::new(TextEditWidget::default()),
-                        "Checkbox" => Box::new(CheckboxWidget::default()),
-                        "Slider" => Box::new(SliderWidget::default()),
-                        "Progress Bar" => Box::new(ProgressBarWidget::default()),
-                        "ComboBox" => Box::new(ComboBoxWidget::default()),
-                        "Image" => Box::new(ImageWidget::default()),
-                        "Vertical Layout" => Box::new(VerticalLayout::default()),
-                        "Horizontal Layout" => Box::new(HorizontalLayout::default()),
-                        "Grid Layout" => Box::new(GridLayout::default()),
-                        "Separator" => Box::new(SeparatorWidget::default()),
-                        "Spinner" => Box::new(SpinnerWidget::default()),
-                        "Hyperlink" => Box::new(HyperlinkWidget::default()),
-                        "Color Picker" => Box::new(ColorPickerWidget::default()),
-                    "Table" => Box::new(TableWidget::default()),
-                    "Plot" => Box::new(PlotWidget::default()),
-                        "Scroll Area" => Box::new(ScrollAreaWidget::default()),
-                        "Tab Container" => Box::new(TabContainerWidget::default()),
-                        "Window" => Box::new(WindowWidget::default()),
-                        _ => return,
-                    };
-                    self.children.push(new_widget);
+                    if let Some(new_widget) = create_widget_by_name(&payload) {
+                        self.children.push(new_widget);
+                    }
                 }
             }
         }).response;
@@ -2655,6 +2886,12 @@ impl WidgetNode for WindowWidget {
         let widget_rect = response.rect;
         let border_clicked = create_container_selection_overlay(ui, widget_rect, 8.0, self.id);
         handle_selection(ui, self.id, border_clicked, selection);
+
+        // Draw drop zone indicator when dragging over
+        let is_dragging = ui.memory(|mem| mem.data.get_temp::<String>(egui::Id::new("dragged_widget_type")).is_some());
+        if is_dragging && ui.rect_contains_pointer(widget_rect) {
+            draw_drop_zone_indicator(ui, widget_rect);
+        }
 
         if selection.contains(&self.id) {
             draw_gizmo(ui, widget_rect);
@@ -2670,6 +2907,7 @@ impl WidgetNode for WindowWidget {
         ui.horizontal(|ui| {
             ui.label("Title:");
             ui.text_edit_singleline(&mut self.title);
+            reset_button(ui, &mut self.title, "Window".to_string());
         });
 
         ui.separator();
@@ -2685,6 +2923,7 @@ impl WidgetNode for WindowWidget {
         ui.horizontal(|ui| {
             ui.label("Default Width:");
             ui.add(egui::DragValue::new(&mut self.default_width).speed(1.0).range(100.0..=1000.0));
+            reset_button(ui, &mut self.default_width, 300.0);
         });
 
         ui.horizontal(|ui| {
@@ -2837,30 +3076,9 @@ impl WidgetNode for TabContainerWidget {
 
                 if let Some(payload) = payload_option {
                     if ui.input(|i| i.pointer.any_released()) {
-                        let new_widget: Box<dyn WidgetNode> = match payload.as_str() {
-                            "Button" => Box::new(ButtonWidget::default()),
-                            "Label" => Box::new(LabelWidget::default()),
-                            "Text Edit" => Box::new(TextEditWidget::default()),
-                            "Checkbox" => Box::new(CheckboxWidget::default()),
-                            "Slider" => Box::new(SliderWidget::default()),
-                            "Progress Bar" => Box::new(ProgressBarWidget::default()),
-                            "ComboBox" => Box::new(ComboBoxWidget::default()),
-                            "Image" => Box::new(ImageWidget::default()),
-                            "Vertical Layout" => Box::new(VerticalLayout::default()),
-                            "Horizontal Layout" => Box::new(HorizontalLayout::default()),
-                            "Grid Layout" => Box::new(GridLayout::default()),
-                            "Separator" => Box::new(SeparatorWidget::default()),
-                            "Spinner" => Box::new(SpinnerWidget::default()),
-                            "Hyperlink" => Box::new(HyperlinkWidget::default()),
-                            "Color Picker" => Box::new(ColorPickerWidget::default()),
-                    "Table" => Box::new(TableWidget::default()),
-                    "Plot" => Box::new(PlotWidget::default()),
-                            "Scroll Area" => Box::new(ScrollAreaWidget::default()),
-                            "Tab Container" => Box::new(TabContainerWidget::default()),
-                            "Window" => Box::new(WindowWidget::default()),
-                            _ => return,
-                        };
-                        tab.children.push(new_widget);
+                        if let Some(new_widget) = create_widget_by_name(&payload) {
+                            tab.children.push(new_widget);
+                        }
                     }
                 }
             }
@@ -2870,6 +3088,12 @@ impl WidgetNode for TabContainerWidget {
         let widget_rect = response.rect;
         let border_clicked = create_container_selection_overlay(ui, widget_rect, 8.0, self.id);
         handle_selection(ui, self.id, border_clicked, selection);
+
+        // Draw drop zone indicator when dragging over
+        let is_dragging = ui.memory(|mem| mem.data.get_temp::<String>(egui::Id::new("dragged_widget_type")).is_some());
+        if is_dragging && ui.rect_contains_pointer(widget_rect) {
+            draw_drop_zone_indicator(ui, widget_rect);
+        }
 
         if selection.contains(&self.id) {
             draw_gizmo(ui, widget_rect);
@@ -3035,30 +3259,9 @@ impl WidgetNode for ScrollAreaWidget {
 
                 if let Some(payload) = payload_option {
                     if ui.input(|i| i.pointer.any_released()) {
-                        let new_widget: Box<dyn WidgetNode> = match payload.as_str() {
-                            "Button" => Box::new(ButtonWidget::default()),
-                            "Label" => Box::new(LabelWidget::default()),
-                            "Text Edit" => Box::new(TextEditWidget::default()),
-                            "Checkbox" => Box::new(CheckboxWidget::default()),
-                            "Slider" => Box::new(SliderWidget::default()),
-                            "Progress Bar" => Box::new(ProgressBarWidget::default()),
-                            "ComboBox" => Box::new(ComboBoxWidget::default()),
-                            "Image" => Box::new(ImageWidget::default()),
-                            "Vertical Layout" => Box::new(VerticalLayout::default()),
-                            "Horizontal Layout" => Box::new(HorizontalLayout::default()),
-                            "Grid Layout" => Box::new(GridLayout::default()),
-                            "Separator" => Box::new(SeparatorWidget::default()),
-                            "Spinner" => Box::new(SpinnerWidget::default()),
-                            "Hyperlink" => Box::new(HyperlinkWidget::default()),
-                            "Color Picker" => Box::new(ColorPickerWidget::default()),
-                    "Table" => Box::new(TableWidget::default()),
-                    "Plot" => Box::new(PlotWidget::default()),
-                            "Scroll Area" => Box::new(ScrollAreaWidget::default()),
-                            "Tab Container" => Box::new(TabContainerWidget::default()),
-                            "Window" => Box::new(WindowWidget::default()),
-                            _ => return,
-                        };
-                        self.children.push(new_widget);
+                        if let Some(new_widget) = create_widget_by_name(&payload) {
+                            self.children.push(new_widget);
+                        }
                     }
                 }
             })
@@ -3068,6 +3271,12 @@ impl WidgetNode for ScrollAreaWidget {
         let widget_rect = response;
         let border_clicked = create_container_selection_overlay(ui, widget_rect, 8.0, self.id);
         handle_selection(ui, self.id, border_clicked, selection);
+
+        // Draw drop zone indicator when dragging over
+        let is_dragging = ui.memory(|mem| mem.data.get_temp::<String>(egui::Id::new("dragged_widget_type")).is_some());
+        if is_dragging && ui.rect_contains_pointer(widget_rect) {
+            draw_drop_zone_indicator(ui, widget_rect);
+        }
 
         if selection.contains(&self.id) {
             draw_gizmo(ui, widget_rect);
@@ -3357,7 +3566,7 @@ impl WidgetNode for FreeformLayout {
     }
 
     fn render_editor(&mut self, ui: &mut Ui, selection: &mut HashSet<Uuid>) {
-        let container_rect = egui::Rect::from_min_size(
+        let _container_rect = egui::Rect::from_min_size(
             ui.cursor().min,
             egui::vec2(self.width, self.height),
         );
@@ -3463,7 +3672,7 @@ impl WidgetNode for FreeformLayout {
 
         // Handle drag movement
         if let Some(idx) = dragged_child_idx {
-            if let Some(pointer_pos) = ui.ctx().pointer_interact_pos() {
+            if let Some(_pointer_pos) = ui.ctx().pointer_interact_pos() {
                 let delta = ui.ctx().input(|i| i.pointer.delta());
                 let child = &mut self.children[idx];
 
@@ -3487,6 +3696,12 @@ impl WidgetNode for FreeformLayout {
         let border_clicked = create_container_selection_overlay(ui, widget_rect, 10.0, self.id);
         handle_selection(ui, self.id, border_clicked, selection);
 
+        // Draw drop zone indicator when dragging over
+        let is_dragging = ui.memory(|mem| mem.data.get_temp::<String>(egui::Id::new("dragged_widget_type")).is_some());
+        if is_dragging && ui.rect_contains_pointer(widget_rect) {
+            draw_drop_zone_indicator(ui, widget_rect);
+        }
+
         if selection.contains(&self.id) {
             draw_gizmo(ui, widget_rect);
         }
@@ -3497,7 +3712,7 @@ impl WidgetNode for FreeformLayout {
             egui::vec2(self.width, 24.0),
         );
 
-        let drop_response = ui.allocate_rect(drop_rect, egui::Sense::hover());
+        let _drop_response = ui.allocate_rect(drop_rect, egui::Sense::hover());
 
         // Check for drops
         let (_drop_response, payload_option) = ui.dnd_drop_zone::<String, _>(egui::Frame::NONE, |ui| {
@@ -3506,28 +3721,10 @@ impl WidgetNode for FreeformLayout {
 
         if let Some(payload) = payload_option {
             if ui.input(|i| i.pointer.any_released()) {
-                let drop_pos = ui.ctx().pointer_hover_pos().unwrap_or(container_origin);
-                let relative_pos = drop_pos - container_origin;
+                if let Some(widget) = create_widget_by_name(&payload) {
+                    let drop_pos = ui.ctx().pointer_hover_pos().unwrap_or(container_origin);
+                    let relative_pos = drop_pos - container_origin;
 
-                let new_widget: Option<Box<dyn WidgetNode>> = match payload.as_str() {
-                    "Button" => Some(Box::new(ButtonWidget::default())),
-                    "Label" => Some(Box::new(LabelWidget::default())),
-                    "Text Edit" => Some(Box::new(TextEditWidget::default())),
-                    "Checkbox" => Some(Box::new(CheckboxWidget::default())),
-                    "Slider" => Some(Box::new(SliderWidget::default())),
-                    "Progress Bar" => Some(Box::new(ProgressBarWidget::default())),
-                    "ComboBox" => Some(Box::new(ComboBoxWidget::default())),
-                    "Image" => Some(Box::new(ImageWidget::default())),
-                    "Separator" => Some(Box::new(SeparatorWidget::default())),
-                    "Spinner" => Some(Box::new(SpinnerWidget::default())),
-                    "Hyperlink" => Some(Box::new(HyperlinkWidget::default())),
-                    "Color Picker" => Some(Box::new(ColorPickerWidget::default())),
-                    "Table" => Some(Box::new(TableWidget::default())),
-                    "Plot" => Some(Box::new(PlotWidget::default())),
-                    _ => None,
-                };
-
-                if let Some(widget) = new_widget {
                     let x = if self.snap_to_grid {
                         (relative_pos.x / self.grid_size).round() * self.grid_size
                     } else {
@@ -3561,11 +3758,13 @@ impl WidgetNode for FreeformLayout {
         ui.horizontal(|ui| {
             ui.label("Width:");
             ui.add(egui::DragValue::new(&mut self.width).speed(1.0).range(100.0..=2000.0));
+            reset_button(ui, &mut self.width, 400.0);
         });
 
         ui.horizontal(|ui| {
             ui.label("Height:");
             ui.add(egui::DragValue::new(&mut self.height).speed(1.0).range(100.0..=2000.0));
+            reset_button(ui, &mut self.height, 300.0);
         });
 
         ui.separator();
@@ -3577,6 +3776,7 @@ impl WidgetNode for FreeformLayout {
         ui.horizontal(|ui| {
             ui.label("Grid Size:");
             ui.add(egui::DragValue::new(&mut self.grid_size).speed(1.0).range(5.0..=50.0));
+            reset_button(ui, &mut self.grid_size, 10.0);
         });
 
         ui.separator();
@@ -3682,7 +3882,7 @@ impl WidgetNode for TableWidget {
 
     fn render_editor(&mut self, ui: &mut Ui, selection: &mut HashSet<Uuid>) {
         // Wrap table in a Frame so we have a bounding box for selection
-        let frame = egui::Frame::none().inner_margin(0.0);
+        let frame = egui::Frame::NONE.inner_margin(0.0);
         let response = frame.show(ui, |ui| {
              let available_height = 150.0; // Fixed height for editor preview
              let mut table = egui_extras::TableBuilder::new(ui)
@@ -3740,7 +3940,8 @@ impl WidgetNode for TableWidget {
         ui.checkbox(&mut self.resizable, "Resizable Columns");
         ui.horizontal(|ui| {
             ui.label("Preview Rows:");
-             ui.add(egui::DragValue::new(&mut self.row_count).range(0..=100));
+            ui.add(egui::DragValue::new(&mut self.row_count).range(0..=100));
+            reset_button(ui, &mut self.row_count, 5);
         });
         
         ui.separator();
@@ -3942,11 +4143,13 @@ impl WidgetNode for PlotWidget {
         ui.horizontal(|ui| {
             ui.label("Title:");
             ui.text_edit_singleline(&mut self.title);
+            reset_button(ui, &mut self.title, "Plot".to_string());
         });
 
         ui.horizontal(|ui| {
             ui.label("Height:");
             ui.add(egui::DragValue::new(&mut self.height).speed(1.0).range(50.0..=1000.0));
+            reset_button(ui, &mut self.height, 200.0);
         });
 
         ui.checkbox(&mut self.show_x_axis, "Show X Axis");

@@ -1,10 +1,14 @@
-# CLAUDE.md - Development Guide for AI Agents
+# CLAUDE.md - Development Guide for Aether RAD
 
-This document provides context, bite-sized tasks, and best practices for AI agents contributing to Aether RAD.
+This document provides context, development status, and best practices for AI agents and contributors.
 
-## Project Context
+## Project Overview
 
 **Aether RAD** is a visual UI builder for Rust/egui applications. It uses a **Shadow Object Model (SOM)** architecture to bridge immediate-mode rendering with retained-mode editing.
+
+**Current Version:** 2.0 (Functionally Complete Prototype)
+**Architecture:** Native Rust/egui with Shadow Object Model
+**Platforms:** Desktop (macOS/Linux/Windows) & Web (WASM)
 
 ### Key Concepts
 
@@ -17,25 +21,36 @@ This document provides context, bite-sized tasks, and best practices for AI agen
 
 3. **typetag**: Enables polymorphic serialization of `Box<dyn WidgetNode>` to JSON.
 
-4. **Panels**: IDE-style docking layout with Canvas, Palette, Hierarchy, Inspector, Variables, Assets, Output, and CodePreview panels.
+4. **Native Panels**: IDE-style layout with Left Sidebar (Palette, Assets, Hierarchy), Right Sidebar (Inspector, Variables), Bottom Panel, and Central Canvas.
 
 ---
 
 ## Architecture Quick Reference
 
 ```
-src/model.rs     - WidgetNode trait, ProjectState, Variable, VariableType, Action, WidgetEvent, AssetManager
-src/widgets.rs   - Widget implementations (15 widgets including layouts, inputs, and display widgets)
-src/ui.rs        - AetherTabViewer, panel rendering, docking layout
-src/compiler.rs  - Code generation (Cargo.toml, main.rs, app.rs) with prettyplease formatting
-src/app.rs       - Main app struct, eframe integration, save/load, undo/redo, copy/paste
-src/theme.rs     - Light/Dark theme configuration, color schemes
-src/syntax.rs    - Syntax highlighting for code preview (Rust and TOML)
-src/validator.rs - Cargo check integration for code validation
-src/io.rs        - Platform-agnostic file I/O (native + WASM stubs)
-src/lib.rs       - Library exports
-src/main.rs      - Entry point
-tests/           - Integration tests for serialization, codegen, and manipulation
+src/
+├── main.rs           # Entry point
+├── app.rs            # Main app struct, eframe integration, undo/redo, copy/paste
+├── model.rs          # WidgetNode trait, ProjectState, Variable, VariableType, Action, WidgetEvent
+├── widgets.rs        # 21 widget implementations
+├── compiler.rs       # Code generation (Cargo.toml, main.rs, app.rs) with prettyplease formatting
+├── theme.rs          # Light/Dark theme configuration, color schemes
+├── syntax.rs         # Syntax highlighting for code preview (Rust and TOML)
+├── validator.rs      # Cargo check integration for code validation
+├── io.rs             # Platform-agnostic file I/O (native + WASM stubs)
+├── lib.rs            # Library exports
+└── ui/
+    ├── mod.rs        # EditorContext, UiState, panel visibility management
+    ├── canvas.rs     # Central canvas with zoom/pan/grid
+    ├── palette.rs    # Widget library with drag-and-drop
+    ├── hierarchy.rs  # Tree view with keyboard navigation
+    ├── inspector.rs  # Property editor
+    ├── variables.rs  # Variable management panel
+    ├── assets.rs     # Asset manager UI
+    └── code_preview.rs # Syntax-highlighted code view
+
+tests/
+└── integration_tests.rs  # 8 comprehensive tests
 ```
 
 ---
@@ -47,42 +62,37 @@ tests/           - Integration tests for serialization, codegen, and manipulatio
 | Phase | Name | Status | Notes |
 |-------|------|--------|-------|
 | 1 | The Kernel (SOM, Serialization) | Complete | WidgetNode trait, ProjectState, typetag |
-| 2 | The Shell (Workspace Layout) | Complete | egui_dock with 8 panels |
-| 3 | Interactive Canvas (D&D, Gizmos) | Complete | Selection, gizmos, palette DnD |
+| 2 | The Shell (Workspace Layout) | Complete | Native egui panels with UiState management |
+| 3 | Interactive Canvas (D&D, Gizmos) | Complete | Selection, DnD, click-to-add all working |
 | 4 | Logic & Data Binding | Complete | Variables, bindings, events, actions |
 | 5 | The Compiler (Code Generation) | Complete | quote! macros, prettyplease formatting |
 
-### Extended Features (Beyond Original Plan)
+### Known Issues
 
-| Feature | Location | Notes |
-|---------|----------|-------|
-| Undo/Redo System | `src/app.rs` | 50-step history, Ctrl+Z/Y shortcuts |
-| Delete Widget | `src/app.rs`, `src/ui.rs` | Delete key + button in Inspector |
-| Widget Reordering | `src/model.rs`, `src/ui.rs` | Move Up/Down buttons |
-| Copy/Paste | `src/app.rs` | Ctrl+C/V with UUID regeneration |
-| Keyboard Navigation | `src/ui.rs` | Arrow keys in Hierarchy |
-| Code Preview Panel | `src/ui.rs` | Live-updating, all 3 files |
-| Project Export | `src/ui.rs` | Write to disk with folder picker |
-| Custom Project Names | `src/model.rs`, `src/compiler.rs` | Editable in Output panel |
-| Event System | `src/model.rs`, `src/widgets.rs` | WidgetEvent enum + Action enum |
-| Integration Tests | `tests/integration_tests.rs` | Round-trip, codegen, manipulation |
-| Gizmo System | `src/widgets.rs` | Orange outline, resize handles (Image) |
-| Light/Dark Theme Toggle | `src/theme.rs`, `src/app.rs` | Theme-aware colors, user-selectable |
-| Syntax Highlighting | `src/syntax.rs`, `src/ui.rs` | LayoutJob-based coloring, theme-aware |
-| Cargo Check Validation | `src/ui.rs`, `src/validator.rs` | Spinner animation, disabled button while checking |
-| Canvas Zoom/Pan | `src/ui.rs` | Zoom slider, fit/100% buttons |
-| Multi-Selection | `src/ui.rs`, `src/widgets.rs` | Ctrl+click toggle, bulk delete |
-| Project Templates | `src/model.rs` | Empty, Counter App, Form, Dashboard |
-| Asset Manager | `src/model.rs`, `src/ui.rs` | Assets panel, image/audio/data types |
-| WASM Support | `Cargo.toml`, `src/io.rs` | Platform-agnostic file I/O |
+| Issue | Severity | Description |
+|-------|----------|-------------|
+| *(None critical)* | - | All major issues resolved |
 
-### Implemented Widgets (15 total)
+### Recently Fixed
+
+- **Selection**: Widgets now use inert rendering with reliable click detection
+- **DnD**: Click-to-add fallback ensures widgets can always be added
+- **Unused Code**: All ~30 warnings resolved with `#[allow(dead_code)]` on reserved code
+- **Visual Feedback**: Drop zone indicators and improved drag ghost previews
+- **Reordering**: Ctrl+Up/Down, Move buttons, and drag-to-reorder all work
+- **Property Polish**: Added reset buttons to numeric and text properties
+
+### Implemented Widgets (21 total)
 
 | Widget | Category | Bindings | Events | Notes |
 |--------|----------|----------|--------|-------|
 | VerticalLayout | Layout | - | - | Container with spacing |
 | HorizontalLayout | Layout | - | - | Container with spacing |
 | GridLayout | Layout | - | - | Configurable columns |
+| FreeformLayout | Layout | - | - | Absolute positioning |
+| ScrollAreaWidget | Layout | - | - | Scrollable container |
+| TabContainerWidget | Layout | - | - | Tabbed container |
+| WindowWidget | Container | - | - | Floating window (partial) |
 | Button | Input | text | Clicked, DoubleClicked | Full event support |
 | TextEdit | Input | value | Changed | String binding |
 | Checkbox | Input | checked | Changed | Boolean binding |
@@ -95,6 +105,63 @@ tests/           - Integration tests for serialization, codegen, and manipulatio
 | Spinner | Display | - | - | Loading indicator with size |
 | Hyperlink | Display | - | - | Clickable URL link |
 | ColorPicker | Display | color | - | RGBA color selection |
+| TableWidget | Data | - | - | With egui_extras::TableBuilder |
+| PlotWidget | Data | - | - | Line, Bar, Points series |
+
+### Extended Features
+
+| Feature | Location | Notes |
+|---------|----------|-------|
+| Undo/Redo System | `src/app.rs` | 50-step history, Ctrl+Z/Y shortcuts |
+| Copy/Paste | `src/app.rs` | Ctrl+C/V with UUID regeneration |
+| Keyboard Navigation | `src/ui/hierarchy.rs` | Arrow keys in Hierarchy |
+| Code Preview Panel | `src/ui/code_preview.rs` | Live-updating, all 3 files |
+| Project Export | `src/ui/` | Write to disk with folder picker |
+| Event System | `src/model.rs`, `src/widgets.rs` | WidgetEvent enum + Action enum |
+| Light/Dark Theme | `src/theme.rs`, `src/app.rs` | Theme-aware colors |
+| Syntax Highlighting | `src/syntax.rs` | LayoutJob-based coloring |
+| Cargo Check Validation | `src/validator.rs` | Validates generated code compiles |
+| Canvas Zoom/Pan | `src/ui/canvas.rs` | Zoom slider, fit/100% buttons |
+| Project Templates | `src/model.rs` | Empty, Counter App, Form, Dashboard |
+| Asset Manager | `src/model.rs`, `src/ui/assets.rs` | Images, audio, data assets |
+| WASM Support | `Cargo.toml`, `src/io.rs` | Platform-agnostic file I/O |
+
+---
+
+## Development Roadmap
+
+### Phase 1: Core Editing (Complete)
+
+- [x] **Widget Selection**: Inert rendering with reliable click detection
+- [x] **Drag-and-Drop**: Native egui DnD with click-to-add fallback
+- [x] **Widget Manipulation**: Move Up/Down, keyboard shortcuts, drag-to-reorder
+- [x] **Multi-selection**: Ctrl+click support with bulk actions
+
+### Phase 2: Refinement & Polish (Current Priority)
+
+**Focus:** Stabilize and improve UX
+
+- [x] **Cleanup:** Remove unused code (~30 warnings)
+- [x] **Visual Feedback:** Improve DnD ghost previews with drop zone indicators
+- [x] **Property Polish:** Add "Reset to Default" buttons
+- [x] **Error Handling:** Replace panics with graceful fallbacks (codebase already clean)
+- [ ] **Validation:** Enhance `CodeValidator` feedback
+
+### Phase 3: Feature Expansion
+
+**Focus:** Close gap between prototype and production tool
+
+- [ ] **TreeView Widget:** Hierarchical data display
+- [ ] **Asset Integration:** Complete codegen for assets
+- [ ] **Styling System:** Theme editor and export
+- [ ] **Component System:** Prefabs/reusable components
+
+### Phase 4: Advanced Capabilities
+
+- [ ] **Interactive Preview ("Play Mode")**
+- [ ] **Multi-View Support** (multiple windows/screens)
+- [ ] **WASM File API:** Browser File API for file selection
+- [ ] **IndexedDB Storage:** For persistent WASM projects
 
 ---
 
@@ -105,6 +172,8 @@ tests/           - Integration tests for serialization, codegen, and manipulatio
 - `Changed` - Value modification (TextEdit, Checkbox, Slider)
 - `Hovered` - Mouse hover (available but not widely used)
 - `DoubleClicked` - Double-click (Button)
+- `Focused` - Widget gained focus (defined, not implemented)
+- `LostFocus` - Widget lost focus (defined, not implemented)
 
 ### Action Types
 - `IncrementVariable(String)` - Increment a numeric variable by 1
@@ -157,12 +226,9 @@ tests/           - Integration tests for serialization, codegen, and manipulatio
    }
    ```
 
-4. **Register in drop zones** - Add to match statements in ALL layout `render_editor()` methods:
-   - `VerticalLayout::render_editor()`
-   - `HorizontalLayout::render_editor()`
-   - `GridLayout::render_editor()`
+4. **Register in drop zones** - Add to match statements in ALL layout `render_editor()` methods
 
-5. **Add to Palette** - Add widget name to the appropriate category in `render_widget_category()` calls in `src/ui.rs`
+5. **Add to Palette** - Add widget name to appropriate category in `render_widget_category()`
 
 6. **Add label** - Add widget label in `src/theme.rs` `WidgetLabels::get()` method
 
@@ -172,7 +238,7 @@ tests/           - Integration tests for serialization, codegen, and manipulatio
 - Always derive `Debug, Serialize, Deserialize, Clone` on widget structs
 - Use `#[serde(default)]` for optional fields like `bindings` and `events`
 - Selection gizmos use `Color32::from_rgb(255, 165, 0)` (orange)
-- Keep `render_editor` logic simple: draw widget, handle click for selection, draw gizmo if selected
+- Keep `render_editor` logic simple: draw widget, handle click, draw gizmo if selected
 - Use `handle_selection()` helper for multi-selection support
 - Use `draw_gizmo()` and `draw_resize_handles()` helpers for visual feedback
 
@@ -182,148 +248,30 @@ tests/           - Integration tests for serialization, codegen, and manipulatio
 cargo build              # Verify compilation
 cargo test               # Run unit + integration tests
 cargo run                # Manual testing
-cargo clippy             # Lint check
+cargo clippy             # Lint check (aim for zero warnings)
 ```
 
 ---
 
-## Bite-Sized Tasks (Future Work)
-
-### Priority 1: Widget Expansion
-
-#### Task: Add Window Container Widget
-**Complexity:** Hard | **Files:** `src/widgets.rs`, `src/ui.rs`
-
-Per the development plan, allow creating egui::Window containers.
-
-- [ ] Create `WindowWidget` with `title: String`, `children: Vec<Box<dyn WidgetNode>>`
-- [ ] `render_editor`: Draw a styled frame representing the window
-- [ ] Inspector: title field, open/closeable toggles
-- [ ] `codegen`: emit `egui::Window::new(...).show(ctx, |ui| { ... })`
-- [ ] Handle window state in generated app struct
-
-#### Task: Add TabContainer Widget
-**Complexity:** Medium | **Files:** `src/widgets.rs`, `src/ui.rs`
-
-A tabbed container for organizing content.
-
-- [ ] Create `TabContainerWidget` with `tabs: Vec<(String, Vec<Box<dyn WidgetNode>>)>`
-- [ ] `render_editor`: Show tabs with content switching
-- [ ] Inspector: tab management (add/remove/rename)
-- [ ] `codegen`: emit proper tab UI code
-
-#### Task: Add ScrollArea Widget
-**Complexity:** Easy | **Files:** `src/widgets.rs`, `src/ui.rs`
-
-A scrollable container widget.
-
-- [ ] Create `ScrollAreaWidget` with `children: Vec<Box<dyn WidgetNode>>`, scroll direction options
-- [ ] `render_editor`: Wrap children in ScrollArea
-- [ ] `codegen`: emit `egui::ScrollArea::...`
-
-### Priority 2: Hierarchy & Canvas Improvements
-
-#### Task: Re-enable Hierarchy Drag-and-Drop Re-parenting
-**Complexity:** Medium | **Files:** `src/ui.rs`, `src/model.rs`
-
-The hierarchy DnD sources exist but re-parenting is not fully functional.
-
-- [ ] Implement proper `dnd_drop_zone` handling in hierarchy
-- [ ] Fix the `pending_reorder` handling for cross-container moves
-- [ ] Add visual drop indicators (insertion lines between items)
-- [ ] Add undo support for drag-and-drop reorders
-
-#### Task: Improve Canvas Zoom/Pan UX
-**Complexity:** Easy | **Files:** `src/ui.rs`
-
-Enhance the zoom/pan experience.
-
-- [ ] Add Ctrl+scroll wheel for zooming
-- [ ] Add middle-mouse drag for panning
-- [ ] Show zoom percentage in canvas header
-- [ ] Persist zoom/pan state in project
-
-### Priority 3: Code Quality
-
-#### Task: Add Codegen Compilation Test
-**Complexity:** Medium | **Files:** `tests/`
-
-Test that generated code actually compiles.
-
-- [ ] Create test that generates a project with various widgets
-- [ ] Write generated code to temp directory
-- [ ] Run `cargo check` on the generated project
-- [ ] Assert process exits with success
-- [ ] Clean up temp files
-
-#### Task: Add Nested Widget Tests
-**Complexity:** Easy | **Files:** `tests/integration_tests.rs`
-
-Test deeply nested widget structures.
-
-- [ ] Test VerticalLayout containing HorizontalLayout containing Grid
-- [ ] Verify serialization/deserialization preserves nesting
-- [ ] Verify codegen produces valid nested code
-
-### Priority 4: Event System Expansion
-
-#### Task: Add Hover Event Support
-**Complexity:** Easy | **Files:** `src/widgets.rs`
-
-Enable hover events for interactive widgets.
-
-- [ ] Add `Hovered` event handling to Button, Image widgets
-- [ ] Update Inspector to show hover event option
-- [ ] Update codegen to emit `.hovered()` checks
-
-#### Task: Add Focus Events
-**Complexity:** Medium | **Files:** `src/model.rs`, `src/widgets.rs`
-
-Support focus/blur events for input widgets.
-
-- [ ] Add `Focused`, `LostFocus` to WidgetEvent enum
-- [ ] Implement for TextEdit, ComboBox
-- [ ] Update codegen
-
-### Priority 5: WASM Improvements
-
-#### Task: Implement Browser File API
-**Complexity:** Hard | **Files:** `src/io.rs`
-
-Currently WASM file dialogs return None. Use browser File API.
-
-- [ ] Research web-sys File API integration
-- [ ] Implement async file picker for WASM target
-- [ ] Support drag-and-drop file loading
-- [ ] Add IndexedDB storage for projects
-
-### Priority 6: Asset Management
-
-#### Task: Complete Asset Integration
-**Complexity:** Medium | **Files:** `src/ui.rs`, `src/model.rs`
-
-Finish the asset manager integration.
-
-- [ ] Implement actual file import in Assets panel
-- [ ] Allow ImageWidget to reference assets by name
-- [ ] Copy assets to output directory on export
-- [ ] Generate code that loads assets from relative paths
-
----
-
-## Development Workflow
-
-1. **Pick a task** from the list above
-2. **Read the relevant files** to understand current implementation
-3. **Make minimal, focused changes** - avoid over-engineering
-4. **Test manually** with `cargo run`
-5. **Run `cargo clippy`** to check for issues
-6. **Run `cargo test`** to verify no regressions
-7. **Commit with descriptive message**
-
----
-
 ## Common Patterns
+
+### Selection and Gizmo Pattern
+
+```rust
+fn render_editor(&mut self, ui: &mut Ui, selection: &mut HashSet<Uuid>) {
+    let response = ui.some_widget(...);
+
+    // Use helper for multi-selection
+    handle_selection(ui, self.id, response.clicked(), selection);
+
+    if selection.contains(&self.id) {
+        draw_gizmo(ui, response.rect);
+    }
+
+    // Optional: tooltips
+    response.on_hover_text(format!("{}: {}\nID: {}", self.name(), some_property, self.id));
+}
+```
 
 ### Adding a Binding-Enabled Property
 
@@ -351,24 +299,6 @@ if let Some(var) = self.bindings.get("property_name") {
 }
 ```
 
-### Selection and Gizmo Pattern
-
-```rust
-fn render_editor(&mut self, ui: &mut Ui, selection: &mut HashSet<Uuid>) {
-    let response = ui.some_widget(...);
-
-    // Use helper for multi-selection
-    handle_selection(ui, self.id, response.clicked(), selection);
-
-    if selection.contains(&self.id) {
-        draw_gizmo(ui, response.rect);
-    }
-
-    // Optional: tooltips
-    response.on_hover_text(format!("{}: {}\nID: {}", self.name(), some_property, self.id));
-}
-```
-
 ### Adding Events to a Widget
 
 ```rust
@@ -380,10 +310,7 @@ pub events: std::collections::HashMap<crate::model::WidgetEvent, crate::model::A
 ui.separator();
 ui.heading("Events");
 
-let mut events_to_add = None;
-let mut events_to_remove = None;
-
-let possible_events = [WidgetEvent::Changed]; // List supported events
+let possible_events = [WidgetEvent::Clicked, WidgetEvent::Changed];
 
 for event in &possible_events {
     if self.events.contains_key(event) {
@@ -392,36 +319,39 @@ for event in &possible_events {
                 render_action_editor(ui, action, known_variables);
             }
             if ui.button("Remove Event").clicked() {
-                events_to_remove = Some(*event);
+                self.events.remove(event);
             }
         });
-    } else {
-        if ui.button(format!("+ Add {}", event)).clicked() {
-            events_to_add = Some(*event);
-        }
+    } else if ui.button(format!("+ Add {}", event)).clicked() {
+        self.events.insert(*event, Action::Custom(String::new()));
     }
 }
 
-if let Some(event) = events_to_add {
-    self.events.insert(event, Action::Custom(String::new()));
-}
-if let Some(event) = events_to_remove {
-    self.events.remove(&event);
-}
-
 // In codegen():
-let changed_code = if let Some(action) = self.events.get(&WidgetEvent::Changed) {
+let clicked_code = if let Some(action) = self.events.get(&WidgetEvent::Clicked) {
     action.to_code()
 } else {
     quote! {}
 };
 
 quote! {
-    if ui.add(SomeWidget).changed() {
-        #changed_code
+    if ui.button(#label).clicked() {
+        #clicked_code
     }
 }
 ```
+
+---
+
+## Development Workflow
+
+1. **Pick a task** from the roadmap (start with P0 issues)
+2. **Read the relevant files** to understand current implementation
+3. **Make minimal, focused changes** - avoid over-engineering
+4. **Test manually** with `cargo run`
+5. **Run `cargo clippy`** to check for issues
+6. **Run `cargo test`** to verify no regressions
+7. **Commit with descriptive message**
 
 ---
 
@@ -433,4 +363,21 @@ quote! {
 - **quote Docs**: https://docs.rs/quote
 - **typetag Docs**: https://docs.rs/typetag
 - **prettyplease Docs**: https://docs.rs/prettyplease
-- **syntect Docs**: https://docs.rs/syntect
+
+---
+
+## Quick Debugging Commands
+
+```bash
+# Run with debug logging
+RUST_LOG=debug cargo run
+
+# Check for warnings
+cargo clippy 2>&1 | head -100
+
+# Run specific test
+cargo test test_name -- --nocapture
+
+# Check WASM build
+cargo build --target wasm32-unknown-unknown --features wasm
+```

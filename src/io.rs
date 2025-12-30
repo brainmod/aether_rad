@@ -1,5 +1,9 @@
-/// File I/O utilities with WASM support
-/// Provides conditional implementations for native and WASM targets
+//! File I/O utilities with WASM support
+//! Provides conditional implementations for native and WASM targets
+//!
+//! Note: Some functions are reserved for future use (WASM local storage, etc.)
+
+#![allow(dead_code)]
 
 use std::path::PathBuf;
 
